@@ -1,0 +1,54 @@
+{
+  "targets": [
+    {
+      "target_name": "screencapturekit_addon",
+      "cflags!": [ "-fno-exceptions" ],
+      "cflags_cc!": [ "-fno-exceptions" ],
+      "sources": [
+        "src/addon.mm",
+        "src/screencapturekit_wrapper.mm"
+      ],
+      "include_dirs": [
+        "node_modules/node-addon-api",
+        "src"
+      ],
+      "dependencies": [
+        "<!(node -p \"require('node-addon-api').gyp\")"
+      ],
+      "defines": [
+        "NAPI_DISABLE_CPP_EXCEPTIONS",
+        "NAPI_VERSION=8"
+      ],
+      "conditions": [
+        [
+          "OS=='mac'",
+          {
+            "xcode_settings": {
+              "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
+              "CLANG_CXX_LIBRARY": "libc++",
+              "MACOSX_DEPLOYMENT_TARGET": "13.0",
+              "OTHER_CFLAGS": [
+                "-fobjc-arc"
+              ],
+              "WARNING_CFLAGS": [
+                "-Wall",
+                "-Wextra",
+                "-Wno-unused-parameter"
+              ],
+              "USE_HEADERMAP": "NO"
+            },
+            "link_settings": {
+              "libraries": [
+                "-framework ScreenCaptureKit",
+                "-framework Foundation",
+                "-framework AVFoundation",
+                "-framework CoreMedia",
+                "-framework CoreVideo"
+              ]
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}
