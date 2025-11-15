@@ -9,7 +9,7 @@
         "src/screencapturekit_wrapper.mm"
       ],
       "include_dirs": [
-        "node_modules/node-addon-api",
+        "<!(node -p \"require('node-addon-api').include_dir\")",
         "src"
       ],
       "dependencies": [
