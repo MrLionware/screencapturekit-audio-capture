@@ -120,21 +120,38 @@ Napi::Value ScreenCaptureAddon::StartCapture(const Napi::CallbackInfo& info) {
     bool success = wrapper_->startCapture(processId, [this](const AudioSample& sample) {
         // Call JavaScript callback from worker thread
         auto callback = [sample](Napi::Env env, Napi::Function jsCallback) {
-            Napi::Object sampleObj = Napi::Object::New(env);
+            Napi::HandleScope scope(env);
 
-            // Convert audio data to Buffer
-            Napi::Buffer<float> buffer = Napi::Buffer<float>::Copy(
-                env,
-                sample.data.data(),
-                sample.data.size()
-            );
+            try {
+                Napi::Object sampleObj = Napi::Object::New(env);
 
-            sampleObj.Set("data", buffer);
-            sampleObj.Set("sampleRate", Napi::Number::New(env, sample.sampleRate));
-            sampleObj.Set("channelCount", Napi::Number::New(env, sample.channelCount));
-            sampleObj.Set("timestamp", Napi::Number::New(env, sample.timestamp));
+                // Convert audio data to Buffer
+                Napi::Buffer<float> buffer = Napi::Buffer<float>::Copy(
+                    env,
+                    sample.data.data(),
+                    sample.data.size()
+                );
 
-            jsCallback.Call({sampleObj});
+                sampleObj.Set("data", buffer);
+                sampleObj.Set("sampleRate", Napi::Number::New(env, sample.sampleRate));
+                sampleObj.Set("channelCount", Napi::Number::New(env, sample.channelCount));
+                sampleObj.Set("timestamp", Napi::Number::New(env, sample.timestamp));
+
+                // Call the JavaScript callback - may throw
+                Napi::Value result = jsCallback.Call({sampleObj});
+
+                // Check if an exception occurred
+                if (env.IsExceptionPending()) {
+                    Napi::Error error = env.GetAndClearPendingException();
+                    fprintf(stderr, "Error in audio callback: %s\n", error.Message().c_str());
+                }
+            } catch (const Napi::Error& e) {
+                fprintf(stderr, "N-API Error in audio callback: %s\n", e.Message().c_str());
+            } catch (const std::exception& e) {
+                fprintf(stderr, "C++ Exception in audio callback: %s\n", e.what());
+            } catch (...) {
+                fprintf(stderr, "Unknown exception in audio callback\n");
+            }
         };
 
         if (tsfn_) {
