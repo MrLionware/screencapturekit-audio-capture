@@ -33,6 +33,46 @@ node demo-integration.js 4
 node demo-integration.js 5 Safari
 ```
 
+### Example 3: Finding and Filtering Apps
+
+```bash
+node find-apps-example.js
+```
+
+Demonstrates:
+- Getting all available applications
+- Filtering for audio apps only
+- Finding apps by name (case-insensitive)
+- Finding apps by bundle identifier
+- Finding apps by process ID
+
+### Example 4: Volume Threshold (Smart Audio Detection)
+
+```bash
+node volume-threshold-example.js
+```
+
+Shows how to use the `minVolume` option to only receive audio events when sound is actually present, filtering out silence. Great for:
+- Saving CPU by not processing silent audio
+- Detecting when audio playback starts/stops
+- Reducing bandwidth when streaming
+
+### Example 5: Int16 Format Conversion
+
+```bash
+node int16-format-example.js
+```
+
+Demonstrates capturing audio in Int16 format instead of Float32. This is useful when working with audio libraries that expect Int16 data. Also shows how to save the recorded audio to a file.
+
+### Example 6: Buffer Conversion Helper
+
+```bash
+node buffer-conversion-example.js
+```
+
+Shows how to use `AudioCapture.bufferToFloat32Array()` to easily convert the Buffer data to Float32Array for audio processing. Includes examples of calculating audio metrics from the samples.
+
 ## Usage in Your Project
 
 After installing the package:
