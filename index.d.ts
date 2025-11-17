@@ -8,6 +8,41 @@ declare module 'screencapturekit-audio-addon' {
   import { EventEmitter } from 'events';
 
   /**
+   * Error codes for machine-readable error handling
+   */
+  export const ErrorCodes: {
+    PERMISSION_DENIED: 'ERR_PERMISSION_DENIED';
+    APP_NOT_FOUND: 'ERR_APP_NOT_FOUND';
+    INVALID_ARGUMENT: 'ERR_INVALID_ARGUMENT';
+    ALREADY_CAPTURING: 'ERR_ALREADY_CAPTURING';
+    CAPTURE_FAILED: 'ERR_CAPTURE_FAILED';
+    PROCESS_NOT_FOUND: 'ERR_PROCESS_NOT_FOUND';
+  };
+
+  /**
+   * Custom error class with machine-readable error codes
+   */
+  export class AudioCaptureError extends Error {
+    /** Error code for machine-readable handling */
+    code: string;
+    /** Additional details about the error */
+    details: {
+      suggestion?: string;
+      availableApps?: string[];
+      requestedApp?: string;
+      requestedPid?: number;
+      currentProcessId?: number;
+      processId?: number;
+      app?: AppInfo | null;
+      receivedType?: string;
+      expectedTypes?: string[];
+      [key: string]: any;
+    };
+
+    constructor(message: string, code: string, details?: Record<string, any>);
+  }
+
+  /**
    * Information about a running application
    */
   export interface AppInfo {
@@ -47,8 +82,10 @@ declare module 'screencapturekit-audio-addon' {
     timestamp: number;
     /** Audio format ('float32' or 'int16') */
     format: 'float32' | 'int16';
-    /** Total number of samples in buffer */
+    /** Total number of sample values across all channels */
     sampleCount: number;
+    /** Number of frames (sample values per channel) */
+    framesCount: number;
     /** Duration of the audio chunk in milliseconds */
     durationMs: number;
     /** RMS (Root Mean Square) volume level (0.0 to 1.0) */
@@ -149,9 +186,11 @@ declare module 'screencapturekit-audio-addon' {
     /**
      * Get only applications likely to produce audio
      * Filters out system apps and utilities that typically don't have audio
+     * @param options - Filter options
+     * @param options.includeSystemApps - If true, returns all apps (same as getApplications())
      * @returns Array of application information
      */
-    getAudioApps(): AppInfo[];
+    getAudioApps(options?: { includeSystemApps?: boolean }): AppInfo[];
 
     /**
      * Get application information by process ID
@@ -223,17 +262,17 @@ declare module 'screencapturekit-audio-addon' {
     on(event: 'start', listener: (info: CaptureInfo) => void): this;
     on(event: 'audio', listener: (sample: EnhancedAudioSample) => void): this;
     on(event: 'stop', listener: (info: { processId: number }) => void): this;
-    on(event: 'error', listener: (error: Error) => void): this;
+    on(event: 'error', listener: (error: AudioCaptureError) => void): this;
 
     once(event: 'start', listener: (info: CaptureInfo) => void): this;
     once(event: 'audio', listener: (sample: EnhancedAudioSample) => void): this;
     once(event: 'stop', listener: (info: { processId: number }) => void): this;
-    once(event: 'error', listener: (error: Error) => void): this;
+    once(event: 'error', listener: (error: AudioCaptureError) => void): this;
 
     emit(event: 'start', info: CaptureInfo): boolean;
     emit(event: 'audio', sample: EnhancedAudioSample): boolean;
     emit(event: 'stop', info: { processId: number }): boolean;
-    emit(event: 'error', error: Error): boolean;
+    emit(event: 'error', error: AudioCaptureError): boolean;
   }
 
   // Default export is AudioCapture class
