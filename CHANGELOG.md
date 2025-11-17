@@ -50,11 +50,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for both Float32 and Int16 audio formats
 - Comprehensive error handling
 
+## [1.1.0] - 2025-11-16
+
+### Added
+- **New Helper Methods:**
+  - `findByName(name)` - Case-insensitive app search by name
+  - `getAudioApps()` - Filter apps likely to have audio (excludes system apps)
+  - `AudioCapture.bufferToFloat32Array(buffer)` - Static helper for Buffer conversion
+
+- **Volume Threshold Feature:**
+  - `minVolume` option in `startCapture()` to filter silent audio
+  - Only emit audio events when RMS volume exceeds threshold
+  - Useful for detecting when audio playback starts/stops
+
+- **Audio Format Options:**
+  - `format` option in `startCapture()` to specify output format
+  - Support for 'float32' (default) and 'int16' formats
+  - Automatic conversion to Int16 when requested
+
+- **New Example Files:**
+  - `volume-threshold-example.js` - Demonstrates minVolume filtering
+  - `int16-format-example.js` - Shows Int16 conversion and file saving
+  - `buffer-conversion-example.js` - Buffer-to-Float32Array helper usage
+  - `find-apps-example.js` - App discovery and filtering methods
+
+### Improved
+- **Error Messages:**
+  - Detailed permission errors with System Preferences path
+  - App not found errors now show list of available apps
+  - Process ID validation with helpful error messages
+
+- **Documentation:**
+  - Comprehensive README update with accurate examples
+  - New "Working with Audio Data" section
+  - New "Common Issues" troubleshooting section
+  - Updated API reference with all new methods and options
+  - Fixed Quick Start to show correct property names
+
+- **TypeScript Definitions:**
+  - Added `CaptureOptions` interface
+  - Updated `EnhancedAudioSample` with format field
+  - Added signatures for all new methods
+
+### Fixed
+- Sample property access examples now match actual API
+- Buffer conversion examples now use proper syntax
+
 ## [Unreleased]
 
 ### Planned
 - Multiple simultaneous captures
-- Audio format conversion options
 - Stream recording to file
 - WebSocket streaming support
 - Audio effects/filters
