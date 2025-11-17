@@ -96,6 +96,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sample property access examples now match actual API
 - Buffer conversion examples now use proper syntax
 
+## [1.1.1] - 2025-11-17
+
+### Fixed
+- **Critical:** Fixed `sampleCount` calculation - was returning buffer bytes instead of actual sample count
+- **Critical:** Fixed `durationMs` calculation to be accurate based on actual sample frames
+- Fixed `isCapturing()` state synchronization - now uses internal state to prevent race conditions
+
+### Added
+- `framesCount` property to audio samples (number of frames/samples per channel)
+- `AudioCaptureError` class with machine-readable error codes
+- `ErrorCodes` constant for programmatic error handling:
+  - `ERR_PERMISSION_DENIED` - Screen Recording permission not granted
+  - `ERR_APP_NOT_FOUND` - Requested application not found
+  - `ERR_INVALID_ARGUMENT` - Invalid argument provided
+  - `ERR_ALREADY_CAPTURING` - Already capturing from another app
+  - `ERR_CAPTURE_FAILED` - Native capture failed to start
+  - `ERR_PROCESS_NOT_FOUND` - Process ID not found
+- Error `details` property with actionable suggestions and context
+- `includeSystemApps` option for `getAudioApps()` method
+- Helpful hint when `getAudioApps()` returns empty array
+
+### Improved
+- Error messages now include machine-readable codes for UI localization
+- Error details include available apps, suggestions, and context
+- Better error handling for edge cases
+
 ## [Unreleased]
 
 ### Planned
