@@ -37,7 +37,7 @@ declare module 'screencapturekit-audio-addon' {
    * Enhanced audio sample with computed properties
    */
   export interface EnhancedAudioSample {
-    /** Buffer containing Float32 PCM audio samples */
+    /** Buffer containing audio samples (Float32 or Int16 depending on format) */
     data: Buffer;
     /** Sample rate in Hz */
     sampleRate: number;
@@ -45,6 +45,8 @@ declare module 'screencapturekit-audio-addon' {
     channels: number;
     /** Timestamp in seconds */
     timestamp: number;
+    /** Audio format ('float32' or 'int16') */
+    format: 'float32' | 'int16';
     /** Total number of samples in buffer */
     sampleCount: number;
     /** Duration of the audio chunk in milliseconds */
@@ -53,6 +55,16 @@ declare module 'screencapturekit-audio-addon' {
     rms: number;
     /** Peak volume level (0.0 to 1.0) */
     peak: number;
+  }
+
+  /**
+   * Options for starting audio capture
+   */
+  export interface CaptureOptions {
+    /** Minimum RMS volume threshold (0.0 to 1.0). Only emit audio events when volume exceeds this level */
+    minVolume?: number;
+    /** Audio format: 'float32' (default) or 'int16' */
+    format?: 'float32' | 'int16';
   }
 
   /**
@@ -128,6 +140,20 @@ declare module 'screencapturekit-audio-addon' {
     findApplication(identifier: string): AppInfo | null;
 
     /**
+     * Find an application by name (case-insensitive search)
+     * @param name - Application name to search for
+     * @returns Application info if found, null otherwise
+     */
+    findByName(name: string): AppInfo | null;
+
+    /**
+     * Get only applications likely to produce audio
+     * Filters out system apps and utilities that typically don't have audio
+     * @returns Array of application information
+     */
+    getAudioApps(): AppInfo[];
+
+    /**
      * Get application information by process ID
      * @param processId - Process ID
      * @returns Application info if found, null otherwise
@@ -137,14 +163,14 @@ declare module 'screencapturekit-audio-addon' {
     /**
      * Start capturing audio from an application
      * @param appIdentifier - Application name, bundle ID, or process ID
-     * @param options - Capture options (reserved for future use)
+     * @param options - Capture options
      * @returns true if capture started successfully
      *
      * @fires start
      * @fires audio
      * @fires error
      */
-    startCapture(appIdentifier: string | number, options?: object): boolean;
+    startCapture(appIdentifier: string | number, options?: CaptureOptions): boolean;
 
     /**
      * Stop the current capture session
@@ -163,6 +189,13 @@ declare module 'screencapturekit-audio-addon' {
      * @returns Current capture info or null if not capturing
      */
     getCurrentCapture(): CaptureInfo | null;
+
+    /**
+     * Convert Buffer to Float32Array for easier audio processing
+     * @param buffer - Buffer containing Float32 PCM audio samples
+     * @returns Float32Array view of the buffer
+     */
+    static bufferToFloat32Array(buffer: Buffer): Float32Array;
 
     /**
      * Convert RMS value to decibels
