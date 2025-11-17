@@ -6,6 +6,31 @@
 const { ScreenCaptureKit } = require('./index');
 const EventEmitter = require('events');
 
+/**
+ * Custom error class with machine-readable error codes
+ */
+class AudioCaptureError extends Error {
+  constructor(message, code, details = {}) {
+    super(message);
+    this.name = 'AudioCaptureError';
+    this.code = code;
+    this.details = details;
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+/**
+ * Error codes for machine-readable error handling
+ */
+const ErrorCodes = {
+  PERMISSION_DENIED: 'ERR_PERMISSION_DENIED',
+  APP_NOT_FOUND: 'ERR_APP_NOT_FOUND',
+  INVALID_ARGUMENT: 'ERR_INVALID_ARGUMENT',
+  ALREADY_CAPTURING: 'ERR_ALREADY_CAPTURING',
+  CAPTURE_FAILED: 'ERR_CAPTURE_FAILED',
+  PROCESS_NOT_FOUND: 'ERR_PROCESS_NOT_FOUND',
+};
+
 class AudioCapture extends EventEmitter {
   constructor() {
     super();
@@ -48,10 +73,17 @@ class AudioCapture extends EventEmitter {
   /**
    * Get only applications likely to produce audio
    * Filters out system apps and utilities that typically don't have audio
+   * @param {Object} options - Filter options
+   * @param {boolean} options.includeSystemApps - If true, returns all apps (same as getApplications())
    * @returns {Array<{processId: number, bundleIdentifier: string, applicationName: string}>}
    */
-  getAudioApps() {
+  getAudioApps(options = {}) {
     const apps = this.getApplications();
+
+    // If includeSystemApps is true, return all apps
+    if (options.includeSystemApps) {
+      return apps;
+    }
 
     // Common system/utility apps that typically don't have audio
     const excludePatterns = [
@@ -77,10 +109,18 @@ class AudioCapture extends EventEmitter {
       /^font book$/i,
     ];
 
-    return apps.filter(app => {
+    const filtered = apps.filter(app => {
       const name = app.applicationName;
       return !excludePatterns.some(pattern => pattern.test(name));
     });
+
+    // If filtering resulted in empty array, provide helpful guidance
+    if (filtered.length === 0 && apps.length > 0) {
+      // Add a helpful property to indicate fallback is available
+      filtered._hint = 'No audio apps found after filtering. Try getAudioApps({ includeSystemApps: true }) or getApplications() to see all apps.';
+    }
+
+    return filtered;
   }
 
   /**
@@ -114,7 +154,11 @@ class AudioCapture extends EventEmitter {
    */
   startCapture(appIdentifier, options = {}) {
     if (this.capturing) {
-      this.emit('error', new Error('Already capturing. Stop current capture first.'));
+      this.emit('error', new AudioCaptureError(
+        'Already capturing. Stop current capture first.',
+        ErrorCodes.ALREADY_CAPTURING,
+        { currentProcessId: this.currentProcessId }
+      ));
       return false;
     }
 
@@ -132,15 +176,25 @@ class AudioCapture extends EventEmitter {
       if (!appInfo) {
         const apps = this.getApplications();
         if (apps.length === 0) {
-          this.emit('error', new Error(
+          this.emit('error', new AudioCaptureError(
             'No applications available. This may be a permissions issue.\n' +
             'Please ensure Screen Recording permission is granted in:\n' +
-            'System Preferences → Privacy & Security → Screen Recording'
+            'System Preferences → Privacy & Security → Screen Recording',
+            ErrorCodes.PERMISSION_DENIED,
+            {
+              suggestion: 'Grant Screen Recording permission in System Preferences → Privacy & Security → Screen Recording',
+              availableApps: []
+            }
           ));
         } else {
-          this.emit('error', new Error(
-            `Application "${appIdentifier}" not found.\n` +
-            `Available apps: ${apps.map(a => a.applicationName).join(', ')}`
+          this.emit('error', new AudioCaptureError(
+            `Application "${appIdentifier}" not found.`,
+            ErrorCodes.APP_NOT_FOUND,
+            {
+              requestedApp: appIdentifier,
+              availableApps: apps.map(a => a.applicationName),
+              suggestion: `Try one of: ${apps.slice(0, 5).map(a => a.applicationName).join(', ')}${apps.length > 5 ? '...' : ''}`
+            }
           ));
         }
         return false;
@@ -150,14 +204,25 @@ class AudioCapture extends EventEmitter {
       processId = appIdentifier;
       appInfo = this.getApplicationByPid(processId);
       if (!appInfo) {
-        this.emit('error', new Error(
-          `No application found with process ID ${processId}.\n` +
-          'The application may have terminated or may not be capturable.'
+        this.emit('error', new AudioCaptureError(
+          `No application found with process ID ${processId}.`,
+          ErrorCodes.PROCESS_NOT_FOUND,
+          {
+            requestedPid: processId,
+            suggestion: 'The application may have terminated or may not be capturable.'
+          }
         ));
         return false;
       }
     } else {
-      this.emit('error', new Error('Invalid appIdentifier. Must be string or number.'));
+      this.emit('error', new AudioCaptureError(
+        'Invalid appIdentifier. Must be string or number.',
+        ErrorCodes.INVALID_ARGUMENT,
+        {
+          receivedType: typeof appIdentifier,
+          expectedTypes: ['string', 'number']
+        }
+      ));
       return false;
     }
 
@@ -178,6 +243,12 @@ class AudioCapture extends EventEmitter {
         audioData = this._convertToInt16(sample.data);
       }
 
+      // Calculate actual sample count (original data is always Float32 from native layer)
+      const bytesPerSample = 4; // Float32 = 4 bytes
+      const totalSamples = sample.data.length / bytesPerSample;
+      const framesCount = totalSamples / sample.channelCount;
+      const durationMs = (framesCount / sample.sampleRate) * 1000;
+
       const enhancedSample = {
         data: audioData,
         sampleRate: sample.sampleRate,
@@ -185,8 +256,9 @@ class AudioCapture extends EventEmitter {
         timestamp: sample.timestamp,
         format: this.captureOptions.format,
         // Computed properties
-        sampleCount: sample.data.length,
-        durationMs: (sample.data.length / sample.sampleRate / sample.channelCount) * 1000,
+        sampleCount: totalSamples, // Total number of sample values (not bytes)
+        framesCount: framesCount,  // Number of frames (samples per channel)
+        durationMs: durationMs,
         rms: rms,
         peak: peak,
       };
@@ -200,7 +272,8 @@ class AudioCapture extends EventEmitter {
        * @property {number} channels - Number of channels
        * @property {number} timestamp - Timestamp in seconds
        * @property {string} format - Audio format ('float32' or 'int16')
-       * @property {number} sampleCount - Total number of samples
+       * @property {number} sampleCount - Total number of sample values across all channels
+       * @property {number} framesCount - Number of frames (sample values per channel)
        * @property {number} durationMs - Duration in milliseconds
        * @property {number} rms - RMS volume (0.0 to 1.0)
        * @property {number} peak - Peak volume (0.0 to 1.0)
@@ -221,7 +294,15 @@ class AudioCapture extends EventEmitter {
        */
       this.emit('start', { processId, app: appInfo });
     } else {
-      this.emit('error', new Error('Failed to start capture'));
+      this.emit('error', new AudioCaptureError(
+        'Failed to start capture',
+        ErrorCodes.CAPTURE_FAILED,
+        {
+          processId: processId,
+          app: appInfo,
+          suggestion: 'The application may not have visible windows or may not support audio capture.'
+        }
+      ));
     }
 
     return success;
@@ -255,7 +336,9 @@ class AudioCapture extends EventEmitter {
    * @returns {boolean}
    */
   isCapturing() {
-    return this.captureKit.isCapturing();
+    // Use internal state for consistent synchronous behavior
+    // The native layer state is managed through startCapture/stopCapture calls
+    return this.capturing;
   }
 
   /**
@@ -423,3 +506,5 @@ class AudioCapture extends EventEmitter {
 module.exports = AudioCapture;
 module.exports.AudioCapture = AudioCapture;
 module.exports.ScreenCaptureKit = ScreenCaptureKit;
+module.exports.AudioCaptureError = AudioCaptureError;
+module.exports.ErrorCodes = ErrorCodes;
