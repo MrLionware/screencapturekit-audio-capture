@@ -237,10 +237,12 @@ class AudioCapture extends EventEmitter {
       }
 
       let audioData = sample.data;
+      let actualFormat = 'float32'; // Native layer always provides Float32
 
       // Apply format conversion if requested
       if (this.captureOptions.format === 'int16') {
         audioData = this._convertToInt16(sample.data);
+        actualFormat = 'int16'; // Format changed after conversion
       }
 
       // Calculate actual sample count (original data is always Float32 from native layer)
@@ -254,7 +256,7 @@ class AudioCapture extends EventEmitter {
         sampleRate: sample.sampleRate,
         channels: sample.channelCount,
         timestamp: sample.timestamp,
-        format: this.captureOptions.format,
+        format: actualFormat, // Report actual format of the data, not requested format
         // Computed properties
         sampleCount: totalSamples, // Total number of sample values (not bytes)
         framesCount: framesCount,  // Number of frames (samples per channel)
