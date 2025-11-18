@@ -122,10 +122,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error details include available apps, suggestions, and context
 - Better error handling for edge cases
 
+## [1.1.2] - 2025-11-17
+
+### Fixed - CRITICAL
+- **SECURITY:** Fixed buffer overflow in native code AudioBufferList allocation
+  - Was hard-coded to allocate only 2 buffers but could receive more
+  - Now dynamically allocates based on format flags and channel count
+  - Added safety cap at 16 channels to prevent excessive allocation
+  - Prevents potential crashes and memory corruption with multi-channel audio
+
+- **CRITICAL:** Fixed planar vs interleaved audio handling in native code
+  - Now correctly detects format using `kAudioFormatFlagIsNonInterleaved` flag
+  - Properly interleaves planar audio (separate buffers per channel)
+  - Correctly handles interleaved audio (all channels in one buffer)
+  - Fixes crashes with certain audio formats and devices
+
+- Fixed format field reporting to reflect actual buffer format
+  - Was showing requested format instead of actual format after conversion
+  - Now accurately reports 'float32' or 'int16' based on actual data
+
+### Improved
+- Added validation warning if received buffers exceed expected count
+- Better handling of Float32 and Int16 formats in both planar and interleaved modes
+- More robust audio processing that works with various audio configurations
+
 ## [Unreleased]
 
 ### Planned
 - Multiple simultaneous captures
+- Configurable channel count (mono, stereo, multi-channel)
 - Stream recording to file
 - WebSocket streaming support
 - Audio effects/filters
