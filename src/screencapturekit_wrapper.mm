@@ -201,11 +201,23 @@ bool ScreenCaptureKitWrapper::startCapture(int processId, std::function<void(con
                 sample.channelCount = (int)asbd->mChannelsPerFrame;
                 sample.timestamp = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer));
 
-                // Allocate enough space for the AudioBufferList (it's a variable-size struct)
-                size_t audioBufferListSize = offsetof(AudioBufferList, mBuffers[0]) + (sizeof(AudioBuffer) * 2);
+                // Determine expected number of buffers based on format flags
+                // For planar audio: mNumberBuffers = mChannelsPerFrame
+                // For interleaved: mNumberBuffers = 1
+                UInt32 expectedBuffers = (asbd->mFormatFlags & kAudioFormatFlagIsNonInterleaved)
+                    ? asbd->mChannelsPerFrame
+                    : 1;
+
+                // Safety limit: cap at 16 channels to prevent excessive allocation
+                if (expectedBuffers > 16) {
+                    expectedBuffers = 16;
+                }
+
+                // Allocate enough space for the AudioBufferList with the expected number of buffers
+                size_t audioBufferListSize = offsetof(AudioBufferList, mBuffers[0]) + (sizeof(AudioBuffer) * expectedBuffers);
                 AudioBufferList *audioBufferList = (AudioBufferList *)malloc(audioBufferListSize);
                 if (!audioBufferList) {
-                    NSLog(@"Failed to allocate AudioBufferList");
+                    NSLog(@"Failed to allocate AudioBufferList for %u buffers", (unsigned int)expectedBuffers);
                     return;
                 }
 
@@ -227,27 +239,71 @@ bool ScreenCaptureKitWrapper::startCapture(int processId, std::function<void(con
                     return;
                 }
 
-                // Copy audio data
-                for (UInt32 i = 0; i < audioBufferList->mNumberBuffers; i++) {
-                    AudioBuffer audioBuffer = audioBufferList->mBuffers[i];
+                // Validate that we didn't overflow our allocation
+                if (audioBufferList->mNumberBuffers > expectedBuffers) {
+                    NSLog(@"Warning: AudioBufferList has %u buffers but we allocated for %u. Data may be truncated.",
+                          (unsigned int)audioBufferList->mNumberBuffers, (unsigned int)expectedBuffers);
+                }
 
-                    if (!audioBuffer.mData || audioBuffer.mDataByteSize == 0) {
-                        continue;
+                // Handle planar vs interleaved audio based on format flags
+                bool isPlanar = (asbd->mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0;
+                bool isFloat = (asbd->mFormatFlags & kAudioFormatFlagIsFloat) != 0;
+                bool isInt = (asbd->mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0;
+
+                if (isPlanar) {
+                    // Planar audio: each buffer contains one channel, need to interleave
+                    // Find the number of frames (samples per channel)
+                    if (audioBufferList->mNumberBuffers == 0) {
+                        free(audioBufferList);
+                        if (blockBuffer) CFRelease(blockBuffer);
+                        return;
                     }
 
-                    // Check the format - audio might be float or int16
-                    if (asbd->mFormatFlags & kAudioFormatFlagIsFloat) {
-                        // Float32 format
-                        float *bufferData = (float *)audioBuffer.mData;
-                        size_t bufferSize = audioBuffer.mDataByteSize / sizeof(float);
-                        sample.data.insert(sample.data.end(), bufferData, bufferData + bufferSize);
-                    } else if (asbd->mFormatFlags & kAudioFormatFlagIsSignedInteger) {
-                        // Int16 format - convert to float
-                        int16_t *bufferData = (int16_t *)audioBuffer.mData;
-                        size_t bufferSize = audioBuffer.mDataByteSize / sizeof(int16_t);
-                        for (size_t j = 0; j < bufferSize; j++) {
-                            float normalized = bufferData[j] / 32768.0f;
-                            sample.data.push_back(normalized);
+                    size_t framesPerBuffer = 0;
+                    if (isFloat) {
+                        framesPerBuffer = audioBufferList->mBuffers[0].mDataByteSize / sizeof(float);
+                    } else if (isInt) {
+                        framesPerBuffer = audioBufferList->mBuffers[0].mDataByteSize / sizeof(int16_t);
+                    }
+
+                    // Interleave the channels
+                    for (size_t frame = 0; frame < framesPerBuffer; frame++) {
+                        for (UInt32 channel = 0; channel < audioBufferList->mNumberBuffers && channel < expectedBuffers; channel++) {
+                            AudioBuffer audioBuffer = audioBufferList->mBuffers[channel];
+                            if (!audioBuffer.mData) continue;
+
+                            if (isFloat) {
+                                float *bufferData = (float *)audioBuffer.mData;
+                                sample.data.push_back(bufferData[frame]);
+                            } else if (isInt) {
+                                int16_t *bufferData = (int16_t *)audioBuffer.mData;
+                                float normalized = bufferData[frame] / 32768.0f;
+                                sample.data.push_back(normalized);
+                            }
+                        }
+                    }
+                } else {
+                    // Interleaved audio: all channels in one buffer, copy directly
+                    for (UInt32 i = 0; i < audioBufferList->mNumberBuffers && i < expectedBuffers; i++) {
+                        AudioBuffer audioBuffer = audioBufferList->mBuffers[i];
+
+                        if (!audioBuffer.mData || audioBuffer.mDataByteSize == 0) {
+                            continue;
+                        }
+
+                        if (isFloat) {
+                            // Float32 format
+                            float *bufferData = (float *)audioBuffer.mData;
+                            size_t bufferSize = audioBuffer.mDataByteSize / sizeof(float);
+                            sample.data.insert(sample.data.end(), bufferData, bufferData + bufferSize);
+                        } else if (isInt) {
+                            // Int16 format - convert to float
+                            int16_t *bufferData = (int16_t *)audioBuffer.mData;
+                            size_t bufferSize = audioBuffer.mDataByteSize / sizeof(int16_t);
+                            for (size_t j = 0; j < bufferSize; j++) {
+                                float normalized = bufferData[j] / 32768.0f;
+                                sample.data.push_back(normalized);
+                            }
                         }
                     }
                 }
