@@ -6,6 +6,7 @@
 
 declare module 'screencapturekit-audio-addon' {
   import { EventEmitter } from 'events';
+  import { Readable } from 'stream';
 
   /**
    * Error codes for machine-readable error handling
@@ -102,6 +103,32 @@ declare module 'screencapturekit-audio-addon' {
     minVolume?: number;
     /** Audio format: 'float32' (default) or 'int16' */
     format?: 'float32' | 'int16';
+    /**
+     * Requested sample rate in Hz (e.g., 44100, 48000). Default: 48000
+     *
+     * ⚠️ Important: ScreenCaptureKit captures audio at the system's native sample rate (usually 48000 Hz).
+     * This setting is a hint, but the actual sample rate depends on your audio hardware configuration.
+     * Always check sample.sampleRate in received samples to see the actual rate.
+     */
+    sampleRate?: number;
+    /**
+     * Number of audio channels: 1 (mono) or 2 (stereo). Default: 2
+     *
+     * ✅ This setting is reliably honored by ScreenCaptureKit.
+     */
+    channels?: number;
+    /** Buffer size for audio processing. Smaller values = lower latency but higher CPU usage. Default: system default */
+    bufferSize?: number;
+    /** Exclude cursor from capture (for future video features). Default: true */
+    excludeCursor?: boolean;
+  }
+
+  /**
+   * Options for creating an audio stream
+   */
+  export interface StreamOptions extends CaptureOptions {
+    /** Enable object mode to receive full sample objects instead of just raw audio data (default: false) */
+    objectMode?: boolean;
   }
 
   /**
@@ -152,6 +179,23 @@ declare module 'screencapturekit-audio-addon' {
     processId: number;
     /** Application info (may be null if app terminated) */
     app: AppInfo | null;
+  }
+
+  /**
+   * Readable stream for audio capture
+   * Provides a stream-based alternative to the EventEmitter API
+   */
+  export class AudioStream extends Readable {
+    /**
+     * Get information about the current capture
+     * @returns Current capture info or null if not capturing
+     */
+    getCurrentCapture(): CaptureInfo | null;
+
+    /**
+     * Stop the stream and underlying capture
+     */
+    stop(): void;
   }
 
   /**
@@ -230,6 +274,15 @@ declare module 'screencapturekit-audio-addon' {
     getCurrentCapture(): CaptureInfo | null;
 
     /**
+     * Create a readable stream for audio capture
+     * Provides a stream-based alternative to the event-based API
+     * @param appIdentifier - Application name, bundle ID, or process ID
+     * @param options - Stream and capture options
+     * @returns Readable stream that emits audio data
+     */
+    createAudioStream(appIdentifier: string | number, options?: StreamOptions): AudioStream;
+
+    /**
      * Convert Buffer to Float32Array for easier audio processing
      * @param buffer - Buffer containing Float32 PCM audio samples
      * @returns Float32Array view of the buffer
@@ -257,6 +310,24 @@ declare module 'screencapturekit-audio-addon' {
      * @returns Decibel level
      */
     static calculateDb(samples: Buffer, method?: 'rms' | 'peak'): number;
+
+    /**
+     * Create a WAV file from PCM audio data
+     * @param buffer - PCM audio data (Float32 or Int16)
+     * @param options - WAV file options
+     * @param options.sampleRate - Sample rate in Hz (e.g., 48000)
+     * @param options.channels - Number of channels (e.g., 2 for stereo)
+     * @param options.format - Audio format: 'float32' or 'int16' (default: 'float32')
+     * @returns Complete WAV file buffer that can be written to disk
+     */
+    static writeWav(
+      buffer: Buffer,
+      options: {
+        sampleRate: number;
+        channels: number;
+        format?: 'float32' | 'int16';
+      }
+    ): Buffer;
 
     // Event emitter methods
     on(event: 'start', listener: (info: CaptureInfo) => void): this;
