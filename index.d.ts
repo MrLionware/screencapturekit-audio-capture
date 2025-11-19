@@ -199,6 +199,58 @@ declare module 'screencapturekit-audio-addon' {
   }
 
   /**
+   * Transform stream for converting audio to STT-ready format
+   * Automatically handles Float32 to Int16 conversion and stereo to mono downmixing
+   */
+  export class STTConverter extends Transform {
+    /** Target output format */
+    targetFormat: 'int16' | 'float32';
+    /** Target output channels */
+    targetChannels: 1 | 2;
+    /** Application being captured (added by createSTTStream) */
+    app?: AppInfo;
+
+    /**
+     * Create a new STTConverter
+     * @param options - Conversion options
+     */
+    constructor(options?: {
+      format?: 'int16' | 'float32';
+      channels?: 1 | 2;
+      objectMode?: boolean;
+    });
+
+    /**
+     * Stop the stream (convenience method added by createSTTStream)
+     */
+    stop?(): void;
+  }
+
+  /**
+   * Options for app selection
+   */
+  export interface SelectAppOptions {
+    /** Only search audio apps (excludes system apps). Default: true */
+    audioOnly?: boolean;
+    /** Throw error if no app found. Default: false */
+    throwOnNotFound?: boolean;
+  }
+
+  /**
+   * Options for STT stream creation
+   */
+  export interface STTStreamOptions extends CaptureOptions {
+    /** Output format. Default: 'int16' */
+    format?: 'int16' | 'float32';
+    /** Output channels (1 = mono, 2 = stereo). Default: 1 */
+    channels?: 1 | 2;
+    /** Stream emits sample objects with metadata. Default: false */
+    objectMode?: boolean;
+    /** Auto-select first available audio app if identifier not found. Default: true */
+    autoSelect?: boolean;
+  }
+
+  /**
    * High-level SDK wrapper with event-based API
    */
   export class AudioCapture extends EventEmitter {
@@ -242,6 +294,25 @@ declare module 'screencapturekit-audio-addon' {
      * @returns Application info if found, null otherwise
      */
     getApplicationByPid(processId: number): AppInfo | null;
+
+    /**
+     * Smart app selection with fallback strategies
+     * Tries multiple methods to find an app: exact name, PID, bundle ID, partial match, audio apps
+     * @param identifiers - App identifier(s) to try in order. If null/undefined, returns first audio app
+     * @param options - Selection options
+     * @returns Application info if found, null otherwise (unless throwOnNotFound is true)
+     * @throws {AudioCaptureError} If throwOnNotFound is true and no app found
+     * @example
+     * // Try multiple apps in order
+     * const app = capture.selectApp(['Spotify', 'Music', 'Safari']);
+     *
+     * // Get first available audio app
+     * const app = capture.selectApp();
+     *
+     * // Throw error if not found
+     * const app = capture.selectApp('Spotify', { throwOnNotFound: true });
+     */
+    selectApp(identifiers?: string | number | (string | number)[] | null, options?: SelectAppOptions): AppInfo | null;
 
     /**
      * Verify screen recording permissions
@@ -332,6 +403,31 @@ declare module 'screencapturekit-audio-addon' {
      * @returns Readable stream that emits audio data
      */
     createAudioStream(appIdentifier: string | number, options?: StreamOptions): AudioStream;
+
+    /**
+     * Create a pre-configured stream for Speech-to-Text (STT) engines
+     * Automatically converts to Int16 mono format (most common STT input)
+     * Supports fallback app selection and auto-selection if app not found
+     * @param appIdentifier - App name, PID, bundle ID, or array to try in order. If null, auto-selects first audio app
+     * @param options - STT stream options
+     * @returns Transform stream ready to pipe to STT engine
+     * @example
+     * // Basic usage - auto-converts to Int16 mono
+     * const sttStream = capture.createSTTStream('Safari');
+     * sttStream.pipe(yourSTTEngine);
+     *
+     * // With fallback apps
+     * const sttStream = capture.createSTTStream(['Zoom', 'Safari', 'Chrome']);
+     *
+     * // Pipe directly to writable stream
+     * const { pipeline } = require('stream');
+     * pipeline(
+     *   capture.createSTTStream('Spotify'),
+     *   yourSTTWritableStream,
+     *   (err) => console.error(err)
+     * );
+     */
+    createSTTStream(appIdentifier?: string | number | (string | number)[] | null, options?: STTStreamOptions): STTConverter;
 
     /**
      * Convert Buffer to Float32Array for easier audio processing
