@@ -183,6 +183,37 @@ Common patterns for integrating audio capture into your application:
 
 ### Speech-to-Text (STT) Integration
 
+**Simple approach with createSTTStream():**
+
+```javascript
+const AudioCapture = require('screencapturekit-audio-capture');
+const { pipeline } = require('stream');
+
+const capture = new AudioCapture();
+
+// One-line STT stream with auto-conversion to Int16 mono
+const sttStream = capture.createSTTStream(['Safari', 'Chrome', 'Zoom'], {
+  minVolume: 0.01      // Filter silence
+});
+
+// Pipe directly to your STT engine
+pipeline(
+  sttStream,
+  yourSTTWritableStream,
+  (err) => {
+    if (err) console.error('STT pipeline error:', err);
+  }
+);
+
+// Which app was selected?
+console.log(`Capturing from: ${sttStream.app.applicationName}`);
+
+// Stop when done
+setTimeout(() => sttStream.stop(), 30000);
+```
+
+**Event-based approach with manual configuration:**
+
 ```javascript
 const AudioCapture = require('screencapturekit-audio-capture');
 
@@ -196,24 +227,21 @@ if (!perms.granted) {
   process.exit(1);
 }
 
-// Find app with error handling
-try {
-  capture.startCapture('Safari', {
-    format: 'int16',      // Most STT engines expect Int16
-    channels: 1,          // Mono reduces bandwidth by 50%
-    minVolume: 0.01      // Filter silence
-  });
-} catch (err) {
-  console.error(`Failed to start: ${err.message}`);
-  if (err.code === 'ERR_APP_NOT_FOUND') {
-    console.log('Available apps:', err.details.availableApps);
-  }
+// Smart app selection with fallback
+const app = capture.selectApp(['Safari', 'Chrome', 'Zoom']);
+if (!app) {
+  console.error('No suitable app found');
   process.exit(1);
 }
 
+capture.startCapture(app.processId, {
+  format: 'int16',      // Most STT engines expect Int16
+  channels: 1,          // Mono reduces bandwidth by 50%
+  minVolume: 0.01      // Filter silence
+});
+
 capture.on('audio', (sample) => {
   // sample.data is Int16 Buffer, ready for STT
-  // Sample structure: { data, sampleRate, channels, format, rms, peak, durationMs }
   sendToSTTEngine(sample.data, sample.sampleRate, sample.channels);
 });
 
@@ -405,6 +433,7 @@ const AudioCapture = require('screencapturekit-audio-capture');
 const {
   AudioCapture,          // High-level SDK wrapper
   AudioStream,           // Readable stream class
+  STTConverter,          // STT conversion transform stream
   ScreenCaptureKit,      // Low-level native binding
   AudioCaptureError,     // Custom error class
   ErrorCodes            // Error code constants
@@ -417,9 +446,9 @@ const {
 |--------|-------------|----------|
 | `AudioCapture` | High-level event-based API | Most users (recommended) |
 | `AudioStream` | Readable stream class | Created via `createAudioStream()` |
+| `STTConverter` | Transform stream for STT | Created via `createSTTStream()` |
+| `ScreenCaptureError`, `ErrorCodes` | Error handling | Type checking, error codes |
 | `ScreenCaptureKit` | Low-level native binding | Advanced users, minimal overhead |
-| `AudioCaptureError` | Custom error class with codes | Error handling, type checking |
-| `ErrorCodes` | Error code constants | Programmatic error handling |
 
 ## Testing
 
@@ -1036,6 +1065,34 @@ if (app) {
 }
 ```
 
+##### `selectApp(identifiers?: string | number | Array, options?: Object): AppInfo | null`
+
+Smart app selection with multiple fallback strategies. Tries exact name, PID, bundle ID, and partial matches.
+
+**Parameters:**
+- `identifiers` - App name, PID, bundle ID, or array to try in order. `null`/`undefined` returns first audio app
+- `options.audioOnly` (boolean) - Only search audio apps (default: `true`)
+- `options.throwOnNotFound` (boolean) - Throw error if no app found (default: `false`)
+
+**Returns:** Application info or `null` (unless `throwOnNotFound` is `true`)
+
+```javascript
+// Try multiple apps in order
+const app = capture.selectApp(['Spotify', 'Music', 'Safari']);
+
+// Get first available audio app
+const app = capture.selectApp();
+
+// Try PID or name with error throw
+const app = capture.selectApp(12345, { throwOnNotFound: true });
+
+// Partial name matching works
+const app = capture.selectApp('spot'); // Finds "Spotify"
+
+// Include system apps
+const app = capture.selectApp('Terminal', { audioOnly: false });
+```
+
 ##### `AudioCapture.verifyPermissions(): Object` (Static)
 
 Verify screen recording permissions before attempting capture. Returns a status object with remediation steps if permissions are not granted.
@@ -1240,6 +1297,57 @@ pipeline(
 
 // Stop the stream
 audioStream.stop();
+```
+
+##### `createSTTStream(appIdentifier?: string | number | Array, options?: object): STTConverter`
+
+Create a pre-configured stream for Speech-to-Text (STT) engines. Automatically converts to Int16 mono format and handles app selection with fallbacks.
+
+**Parameters:**
+- `appIdentifier` - App name, PID, bundle ID, or array to try in order. `null`/`undefined` auto-selects first audio app
+
+**Options:**
+- `format` (string): Output format - `'int16'` (default) or `'float32'`
+- `channels` (number): Output channels - `1` (default, mono) or `2` (stereo)
+- `minVolume` (number): Minimum RMS volume threshold
+- `objectMode` (boolean): Stream emits sample objects with metadata (default: `false`)
+- `autoSelect` (boolean): Auto-select first audio app if identifier not found (default: `true`)
+- Plus all `CaptureOptions` (sampleRate, bufferSize, etc.)
+
+**Returns:** `STTConverter` - Transform stream ready to pipe to STT engine
+
+```javascript
+const { pipeline } = require('stream');
+
+// Simple - auto-converts to Int16 mono
+const sttStream = capture.createSTTStream('Safari');
+sttStream.pipe(yourSTTEngine);
+
+// With fallback apps
+const sttStream = capture.createSTTStream(['Zoom', 'Safari', 'Chrome']);
+
+// Auto-select first available audio app
+const sttStream = capture.createSTTStream();
+console.log(`Selected: ${sttStream.app.applicationName}`);
+
+// Custom format and channels
+const sttStream = capture.createSTTStream('Spotify', {
+  format: 'float32',
+  channels: 2,
+  minVolume: 0.01
+});
+
+// Pipe to writable stream
+pipeline(
+  capture.createSTTStream(['Spotify', 'Music']),
+  yourSTTWritableStream,
+  (err) => {
+    if (err) console.error('Pipeline error:', err);
+  }
+);
+
+// Stop when done
+sttStream.stop();
 ```
 
 #### Static Methods
