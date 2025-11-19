@@ -146,11 +146,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Better handling of Float32 and Int16 formats in both planar and interleaved modes
 - More robust audio processing that works with various audio configurations
 
+## [1.2.0] - 2025-11-18
+
+### Added - Stream API
+- **Stream-Based API:** New `createAudioStream()` method for Node.js Readable stream support
+  - `AudioStream` class extending Node.js Readable
+  - Object mode support for streaming sample objects with metadata
+  - Normal mode for streaming raw audio buffers
+  - Proper backpressure handling
+  - Compatible with `pipeline()` and standard stream utilities
+  - `stop()` method for graceful stream termination
+
+### Added - Advanced Configuration
+- **Native Configuration Support:** Configure audio capture at the native layer
+  - `sampleRate` option (requested rate, system-dependent)
+  - `channels` option (1 = mono, 2 = stereo)
+  - `bufferSize` option for latency control (frames)
+  - `excludeCursor` option (reserved for future video features)
+- **Configuration passed to ScreenCaptureKit:** Direct control over capture parameters
+
+### Added - Examples Reorganization
+- **New Numbered Examples:**
+  - `1-basic-usage.js` - Event-based API with WAV export
+  - `2-stream-api.js` - Stream API with 4 different scenarios
+  - `3-advanced-config.js` - Configuration presets and custom settings
+  - `4-finding-apps.js` - App discovery and filtering
+- **Enhanced Examples README:** Detailed walkthrough of each example
+- **Removed Legacy Examples:** Consolidated old examples into new numbered format
+
+### Added - Testing Infrastructure
+- **Split Test Commands:**
+  - `npm test` - Mock tests using Node.js test runner (requires Node 18+)
+  - `npm run test:integration` - Real capture tests (macOS only)
+- **Test Directory:** Added `tests/` with example validation
+
+### Added - Documentation
+- **Comprehensive README Update:** 478 lines of new content
+  - Module exports reference with all available exports
+  - Build requirements section (Xcode, frameworks, SDK)
+  - Package contents explanation
+  - Version recommendations with security notices
+  - Low-level ScreenCaptureKit API documentation
+  - Native layer implementation details
+  - Enhanced error handling examples with ErrorCodes
+  - Debugging & troubleshooting guide
+  - Migration guides (v1.0.x → v1.1.x, v1.1.1 → v1.1.2)
+  - Performance benchmarks table
+  - Platform support compatibility matrix
+  - Stream API best practices and troubleshooting
+
+### Added - TypeScript
+- **Stream API Types:**
+  - `AudioStream` class definition
+  - `StreamOptions` interface extending `CaptureOptions`
+  - `objectMode` property for stream configuration
+- **Enhanced CaptureOptions:**
+  - `sampleRate`, `channels`, `bufferSize`, `excludeCursor` properties
+  - Detailed JSDoc comments explaining each option
+- **New Static Method Types:**
+  - `writeWav()` method signature
+
+### Improved
+- **API Consistency:** Configuration now passed to native layer instead of JS-only processing
+- **Documentation Quality:** 100% API coverage with architecture transparency
+- **Developer Experience:** Better examples, debugging tools, migration guides
+
+### Technical
+- Native layer now accepts `CaptureConfig` struct
+- Stream implementation uses proper Node.js Readable patterns
+- Configuration validation and defaults in both JS and native layers
+
 ## [Unreleased]
 
 ### Planned
 - Multiple simultaneous captures
-- Configurable channel count (mono, stereo, multi-channel)
 - Stream recording to file
 - WebSocket streaming support
 - Audio effects/filters
