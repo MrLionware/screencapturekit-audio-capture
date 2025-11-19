@@ -159,6 +159,7 @@ class AudioCapture extends EventEmitter {
     this.captureKit = new ScreenCaptureKit();
     this.capturing = false;
     this.currentProcessId = null;
+    this.currentAppInfo = null;
   }
 
   /**
@@ -256,6 +257,77 @@ class AudioCapture extends EventEmitter {
   }
 
   /**
+   * Verify screen recording permissions
+   * Proactively checks if the app has necessary permissions before attempting capture
+   * @static
+   * @returns {Object} Permission status object
+   * @returns {boolean} return.granted - Whether permission is granted
+   * @returns {string} return.message - Human-readable status message
+   * @returns {string} [return.remediation] - Instructions to fix permission issues
+   * @example
+   * const status = AudioCapture.verifyPermissions();
+   * if (!status.granted) {
+   *   console.error(status.message);
+   *   console.log(status.remediation);
+   * }
+   */
+  static verifyPermissions() {
+    const capture = new AudioCapture();
+    const apps = capture.getApplications();
+
+    if (apps.length === 0) {
+      return {
+        granted: false,
+        message: 'Screen Recording permission is not granted or no applications are available.',
+        remediation:
+          'To fix this:\n' +
+          '1. Open System Preferences → Privacy & Security → Screen Recording\n' +
+          '2. Add your terminal app (Terminal.app, iTerm2, VS Code, etc.)\n' +
+          '3. Toggle it ON\n' +
+          '4. Restart your terminal completely for changes to take effect'
+      };
+    }
+
+    return {
+      granted: true,
+      message: `Screen Recording permission granted. Found ${apps.length} available application(s).`,
+      availableApps: apps.length
+    };
+  }
+
+  /**
+   * Get detailed status of current capture session
+   * @returns {Object|null} Status object or null if not capturing
+   * @returns {boolean} return.capturing - Whether currently capturing
+   * @returns {number} return.processId - Process ID being captured
+   * @returns {Object} return.app - Application info (name, bundle ID, PID)
+   * @returns {Object} return.config - Current capture configuration
+   * @example
+   * const status = capture.getStatus();
+   * if (status) {
+   *   console.log(`Capturing from: ${status.app.applicationName}`);
+   *   console.log(`Format: ${status.config.format}, Channels: ${status.config.channels}`);
+   * }
+   */
+  getStatus() {
+    if (!this.capturing) {
+      return null;
+    }
+
+    return {
+      capturing: true,
+      processId: this.currentProcessId,
+      app: this.currentAppInfo,
+      config: {
+        minVolume: this.captureOptions.minVolume,
+        format: this.captureOptions.format,
+        // Note: Native config (sampleRate, channels, bufferSize) is not stored
+        // after startCapture, only the JS-level options
+      }
+    };
+  }
+
+  /**
    * Start capturing audio from an application
    * @param {string|number|Array<string|number>} appIdentifier - Application name, bundle ID, process ID, or array of identifiers
    * @param {Object} options - Capture options
@@ -266,27 +338,37 @@ class AudioCapture extends EventEmitter {
    * @param {number} options.bufferSize - Buffer size for audio processing. Smaller values = lower latency but higher CPU usage
    * @param {boolean} options.excludeCursor - Exclude cursor from capture (for future video features). Default: true
    * @returns {boolean} true if capture started successfully
+   * @throws {AudioCaptureError} Throws structured error with code and details if capture fails
    *
    * @fires AudioCapture#start
    * @fires AudioCapture#audio
    * @fires AudioCapture#error
    *
    * @example
+   * // Basic usage
    * capture.startCapture('Spotify');
-   * capture.startCapture('com.spotify.client');
-   * capture.startCapture(12345); // PID
-   * capture.startCapture('Spotify', { minVolume: 0.01 }); // Only emit when volume > 0.01
-   * capture.startCapture('Spotify', { format: 'int16' }); // Convert to Int16
-   * capture.startCapture('Spotify', { sampleRate: 44100, channels: 1 }); // Custom audio config
+   *
+   * // With error handling
+   * try {
+   *   capture.startCapture('Spotify', { minVolume: 0.01 });
+   * } catch (err) {
+   *   if (err.code === ErrorCodes.APP_NOT_FOUND) {
+   *     console.log('Available apps:', err.details.availableApps);
+   *   }
+   * }
+   *
+   * // Custom configuration
+   * capture.startCapture('Spotify', { sampleRate: 44100, channels: 1, format: 'int16' });
    */
   startCapture(appIdentifier, options = {}) {
     if (this.capturing) {
-      this.emit('error', new AudioCaptureError(
+      const error = new AudioCaptureError(
         'Already capturing. Stop current capture first.',
         ErrorCodes.ALREADY_CAPTURING,
-        { currentProcessId: this.currentProcessId }
-      ));
-      return false;
+        { currentProcessId: this.currentProcessId, currentApp: this.currentAppInfo }
+      );
+      this.emit('error', error);
+      throw error;
     }
 
     // Store options for use in callback (JavaScript-level processing)
@@ -310,8 +392,9 @@ class AudioCapture extends EventEmitter {
       appInfo = this.findApplication(appIdentifier);
       if (!appInfo) {
         const apps = this.getApplications();
+        let error;
         if (apps.length === 0) {
-          this.emit('error', new AudioCaptureError(
+          error = new AudioCaptureError(
             'No applications available. This may be a permissions issue.\n' +
             'Please ensure Screen Recording permission is granted in:\n' +
             'System Preferences → Privacy & Security → Screen Recording',
@@ -320,9 +403,9 @@ class AudioCapture extends EventEmitter {
               suggestion: 'Grant Screen Recording permission in System Preferences → Privacy & Security → Screen Recording',
               availableApps: []
             }
-          ));
+          );
         } else {
-          this.emit('error', new AudioCaptureError(
+          error = new AudioCaptureError(
             `Application "${appIdentifier}" not found.`,
             ErrorCodes.APP_NOT_FOUND,
             {
@@ -330,35 +413,38 @@ class AudioCapture extends EventEmitter {
               availableApps: apps.map(a => a.applicationName),
               suggestion: `Try one of: ${apps.slice(0, 5).map(a => a.applicationName).join(', ')}${apps.length > 5 ? '...' : ''}`
             }
-          ));
+          );
         }
-        return false;
+        this.emit('error', error);
+        throw error;
       }
       processId = appInfo.processId;
     } else if (typeof appIdentifier === 'number') {
       processId = appIdentifier;
       appInfo = this.getApplicationByPid(processId);
       if (!appInfo) {
-        this.emit('error', new AudioCaptureError(
+        const error = new AudioCaptureError(
           `No application found with process ID ${processId}.`,
           ErrorCodes.PROCESS_NOT_FOUND,
           {
             requestedPid: processId,
             suggestion: 'The application may have terminated or may not be capturable.'
           }
-        ));
-        return false;
+        );
+        this.emit('error', error);
+        throw error;
       }
     } else {
-      this.emit('error', new AudioCaptureError(
+      const error = new AudioCaptureError(
         'Invalid appIdentifier. Must be string or number.',
         ErrorCodes.INVALID_ARGUMENT,
         {
           receivedType: typeof appIdentifier,
           expectedTypes: ['string', 'number']
         }
-      ));
-      return false;
+      );
+      this.emit('error', error);
+      throw error;
     }
 
     const success = this.captureKit.startCapture(processId, nativeConfig, (sample) => {
@@ -421,17 +507,18 @@ class AudioCapture extends EventEmitter {
     if (success) {
       this.capturing = true;
       this.currentProcessId = processId;
+      this.currentAppInfo = appInfo;
 
       /**
        * Start event
        * @event AudioCapture#start
        * @type {object}
        * @property {number} processId - Process ID being captured
-       * @property {Object} app - Application info (if available)
+       * @property {Object} app - Application info with applicationName, bundleIdentifier, and processId
        */
       this.emit('start', { processId, app: appInfo });
     } else {
-      this.emit('error', new AudioCaptureError(
+      const error = new AudioCaptureError(
         'Failed to start capture',
         ErrorCodes.CAPTURE_FAILED,
         {
@@ -439,7 +526,9 @@ class AudioCapture extends EventEmitter {
           app: appInfo,
           suggestion: 'The application may not have visible windows or may not support audio capture.'
         }
-      ));
+      );
+      this.emit('error', error);
+      throw error;
     }
 
     return success;
@@ -457,15 +546,18 @@ class AudioCapture extends EventEmitter {
     this.captureKit.stopCapture();
     this.capturing = false;
     const processId = this.currentProcessId;
+    const appInfo = this.currentAppInfo;
     this.currentProcessId = null;
+    this.currentAppInfo = null;
 
     /**
      * Stop event
      * @event AudioCapture#stop
      * @type {object}
      * @property {number} processId - Process ID that was being captured
+     * @property {Object} app - Application info with applicationName, bundleIdentifier, and processId
      */
-    this.emit('stop', { processId });
+    this.emit('stop', { processId, app: appInfo });
   }
 
   /**
