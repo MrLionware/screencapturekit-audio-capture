@@ -115,8 +115,13 @@ test('Capture Control & Audio Processing', async (t) => {
         let errorEmitted = null;
         capture.once('error', (err) => { errorEmitted = err; });
 
-        const success = capture.startCapture('Example App');
-        assert.equal(success, false);
+        assert.throws(() => {
+            capture.startCapture('Example App');
+        }, (err) => {
+            assert.equal(err.code, ErrorCodes.ALREADY_CAPTURING);
+            return true;
+        });
+
         assert.ok(errorEmitted);
         assert.equal(errorEmitted.code, ErrorCodes.ALREADY_CAPTURING);
     });
@@ -299,4 +304,3 @@ test('Static Utilities', async (t) => {
         assert.equal(wav.readUInt16LE(22), 2);
     });
 });
-
