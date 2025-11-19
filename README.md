@@ -19,6 +19,12 @@ Capture real-time audio from any macOS application with a simple, event-driven A
   - [Package Contents](#package-contents)
   - [Version Recommendations](#version-recommendations)
 - [Quick Start](#quick-start)
+- **[Quick Integration Guide](#quick-integration-guide)** 🚀
+  - [Speech-to-Text (STT) Integration](#speech-to-text-stt-integration)
+  - [Voice Agent / Real-Time Processing](#voice-agent--real-time-processing)
+  - [Audio Monitoring / Recording](#audio-monitoring--recording)
+  - [Error-Resilient Production Setup](#error-resilient-production-setup)
+  - [Audio Sample Structure Reference](#audio-sample-structure-reference)
 - [Module Exports](#module-exports)
 - [Testing](#testing)
 - **[Stream-Based API](#stream-based-api)** ⭐
@@ -169,6 +175,222 @@ capture.startCapture('Spotify');
 
 // Stop after 10 seconds
 setTimeout(() => capture.stopCapture(), 10000);
+```
+
+## Quick Integration Guide
+
+Common patterns for integrating audio capture into your application:
+
+### Speech-to-Text (STT) Integration
+
+```javascript
+const AudioCapture = require('screencapturekit-audio-capture');
+
+const capture = new AudioCapture();
+
+// Check permissions first
+const perms = AudioCapture.verifyPermissions();
+if (!perms.granted) {
+  console.error(perms.message);
+  console.log(perms.remediation);
+  process.exit(1);
+}
+
+// Find app with error handling
+try {
+  capture.startCapture('Safari', {
+    format: 'int16',      // Most STT engines expect Int16
+    channels: 1,          // Mono reduces bandwidth by 50%
+    minVolume: 0.01      // Filter silence
+  });
+} catch (err) {
+  console.error(`Failed to start: ${err.message}`);
+  if (err.code === 'ERR_APP_NOT_FOUND') {
+    console.log('Available apps:', err.details.availableApps);
+  }
+  process.exit(1);
+}
+
+capture.on('audio', (sample) => {
+  // sample.data is Int16 Buffer, ready for STT
+  // Sample structure: { data, sampleRate, channels, format, rms, peak, durationMs }
+  sendToSTTEngine(sample.data, sample.sampleRate, sample.channels);
+});
+
+capture.on('error', (err) => console.error('Capture error:', err));
+```
+
+### Voice Agent / Real-Time Processing
+
+```javascript
+const AudioCapture = require('screencapturekit-audio-capture');
+const { pipeline } = require('stream');
+
+const capture = new AudioCapture();
+
+// Stream API for backpressure handling
+const audioStream = capture.createAudioStream('Zoom', {
+  objectMode: true,      // Get metadata with each chunk
+  minVolume: 0.005,      // Voice activity detection threshold
+  format: 'int16',
+  channels: 1,
+  bufferSize: 1024       // Low latency (~21ms)
+});
+
+// Process with streams for better flow control
+pipeline(
+  audioStream,
+  yourVoiceProcessor,
+  yourResponseGenerator,
+  (err) => {
+    if (err) console.error('Pipeline error:', err);
+  }
+);
+
+// Check status anytime
+const status = capture.getStatus();
+if (status) {
+  console.log(`Capturing from: ${status.app.applicationName}`);
+  console.log(`Config: ${status.config.format}, ${status.config.minVolume} threshold`);
+}
+```
+
+### Audio Monitoring / Recording
+
+```javascript
+const AudioCapture = require('screencapturekit-audio-capture');
+const fs = require('fs');
+
+const capture = new AudioCapture();
+const chunks = [];
+
+// Efficient configuration for recording
+capture.startCapture('Music', {
+  format: 'int16',       // 50% smaller than float32
+  channels: 2,           // Preserve stereo
+  bufferSize: 4096      // Larger buffer = lower CPU
+});
+
+capture.on('audio', (sample) => {
+  chunks.push(sample.data);
+
+  // Monitor levels
+  const db = AudioCapture.rmsToDb(sample.rms);
+  console.log(`Level: ${db.toFixed(1)} dB`);
+});
+
+capture.on('stop', () => {
+  // Save as WAV file
+  const combined = Buffer.concat(chunks);
+  const wav = AudioCapture.writeWav(combined, {
+    sampleRate: 48000,
+    channels: 2,
+    format: 'int16'
+  });
+  fs.writeFileSync('recording.wav', wav);
+  console.log('Saved recording.wav');
+});
+
+// Stop after 30 seconds
+setTimeout(() => capture.stopCapture(), 30000);
+```
+
+### Error-Resilient Production Setup
+
+```javascript
+const { AudioCapture, ErrorCodes } = require('screencapturekit-audio-capture');
+
+class RobustAudioCapture {
+  constructor(appName) {
+    this.appName = appName;
+    this.capture = new AudioCapture();
+    this.setupHandlers();
+  }
+
+  async start() {
+    // Verify permissions first
+    const perms = AudioCapture.verifyPermissions();
+    if (!perms.granted) {
+      throw new Error(`Permissions not granted: ${perms.message}`);
+    }
+
+    // Start with error handling
+    try {
+      this.capture.startCapture(this.appName, {
+        minVolume: 0.01,
+        format: 'int16',
+        channels: 1
+      });
+
+      // Verify we're actually capturing
+      const status = this.capture.getStatus();
+      console.log(`Started capturing from: ${status.app.applicationName}`);
+
+    } catch (err) {
+      if (err.code === ErrorCodes.APP_NOT_FOUND) {
+        // Try to find similar app
+        const apps = this.capture.getApplications();
+        const similar = apps.find(app =>
+          app.applicationName.toLowerCase().includes(this.appName.toLowerCase())
+        );
+
+        if (similar) {
+          console.log(`Trying ${similar.applicationName} instead...`);
+          this.capture.startCapture(similar.applicationName);
+        } else {
+          throw new Error(`App not found. Available: ${err.details.availableApps.join(', ')}`);
+        }
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  setupHandlers() {
+    this.capture.on('audio', (sample) => this.handleAudio(sample));
+    this.capture.on('error', (err) => this.handleError(err));
+    this.capture.on('start', ({ app }) => console.log(`Started: ${app.applicationName}`));
+    this.capture.on('stop', ({ app }) => console.log(`Stopped: ${app.applicationName}`));
+  }
+
+  handleAudio(sample) {
+    // Your audio processing here
+  }
+
+  handleError(err) {
+    console.error('Capture error:', err.message);
+    // Implement retry logic, logging, etc.
+  }
+
+  stop() {
+    if (this.capture.isCapturing()) {
+      this.capture.stopCapture();
+    }
+  }
+}
+
+// Usage
+const capture = new RobustAudioCapture('Safari');
+capture.start().catch(console.error);
+```
+
+### Audio Sample Structure Reference
+
+All audio samples include these properties:
+
+```javascript
+{
+  data: Buffer,           // Audio data (Float32 or Int16 depending on format option)
+  sampleRate: 48000,      // Sample rate in Hz
+  channels: 2,            // Number of channels (1 = mono, 2 = stereo)
+  timestamp: 123.45,      // Timestamp in seconds
+  format: 'float32',      // 'float32' or 'int16'
+  sampleCount: 15360,     // Total sample values across all channels
+  framesCount: 7680,      // Frames per channel
+  durationMs: 160,        // Duration in milliseconds
+  rms: 0.123,            // RMS volume (0.0 to 1.0)
+  peak: 0.456            // Peak volume (0.0 to 1.0)
+}
 ```
 
 ## Module Exports
@@ -814,9 +1036,56 @@ if (app) {
 }
 ```
 
+##### `AudioCapture.verifyPermissions(): Object` (Static)
+
+Verify screen recording permissions before attempting capture. Returns a status object with remediation steps if permissions are not granted.
+
+**Returns:**
+- `granted` (boolean): Whether permission is granted
+- `message` (string): Human-readable status message
+- `remediation` (string, optional): Instructions to fix permission issues
+- `availableApps` (number, optional): Number of apps found (if granted)
+
+```javascript
+const status = AudioCapture.verifyPermissions();
+if (!status.granted) {
+  console.error(status.message);
+  console.log(status.remediation);
+  process.exit(1);
+} else {
+  console.log(status.message); // "Screen Recording permission granted. Found X applications."
+}
+```
+
+##### `getStatus(): Object | null`
+
+Get detailed status of the current capture session. Returns `null` if not capturing.
+
+**Returns (when capturing):**
+- `capturing` (boolean): Always `true` when not null
+- `processId` (number): Process ID being captured
+- `app` (AppInfo): Application info with `applicationName`, `bundleIdentifier`, `processId`
+- `config` (Object): Current capture configuration
+  - `minVolume` (number): Volume threshold
+  - `format` (string): Audio format ('float32' or 'int16')
+
+```javascript
+const status = capture.getStatus();
+if (status) {
+  console.log(`Capturing from: ${status.app.applicationName}`);
+  console.log(`Process ID: ${status.processId}`);
+  console.log(`Format: ${status.config.format}`);
+  console.log(`Min volume: ${status.config.minVolume}`);
+} else {
+  console.log('Not currently capturing');
+}
+```
+
 ##### `startCapture(appIdentifier: string | number, options?: object): boolean`
 
 Start capturing audio. Accepts app name, bundle ID, or process ID.
+
+**Throws:** `AudioCaptureError` with code and details if capture fails (permission denied, app not found, etc.). Always emits the error event before throwing.
 
 **Options:**
 
@@ -872,6 +1141,19 @@ capture.startCapture('Spotify', {
   channels: 2,
   bufferSize: 2048
 });
+
+// With error handling
+try {
+  capture.startCapture('Spotify', { minVolume: 0.01 });
+} catch (err) {
+  if (err.code === ErrorCodes.APP_NOT_FOUND) {
+    console.log('Available apps:', err.details.availableApps);
+  } else if (err.code === ErrorCodes.PERMISSION_DENIED) {
+    console.log(err.details.suggestion);
+  } else {
+    console.error('Failed to start:', err.message);
+  }
+}
 ```
 
 **Buffer Size Guidelines:**
