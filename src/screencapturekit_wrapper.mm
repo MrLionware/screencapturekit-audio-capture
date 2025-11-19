@@ -114,7 +114,7 @@ std::vector<AppInfo> ScreenCaptureKitWrapper::getAvailableApps() {
     return apps;
 }
 
-bool ScreenCaptureKitWrapper::startCapture(int processId, std::function<void(const AudioSample&)> callback) {
+bool ScreenCaptureKitWrapper::startCapture(int processId, const CaptureConfig& config, std::function<void(const AudioSample&)> callback) {
     if (!impl) return false;
 
     WrapperImpl *wrapper = static_cast<WrapperImpl*>(impl);
@@ -150,12 +150,23 @@ bool ScreenCaptureKitWrapper::startCapture(int processId, std::function<void(con
             return;
         }
 
-        // Create stream configuration
-        SCStreamConfiguration *config = [[SCStreamConfiguration alloc] init];
-        config.capturesAudio = YES;
-        config.sampleRate = 48000;
-        config.channelCount = 2;
-        config.excludesCurrentProcessAudio = YES;
+        // Create stream configuration using provided config
+        SCStreamConfiguration *streamConfig = [[SCStreamConfiguration alloc] init];
+        streamConfig.capturesAudio = YES;
+        streamConfig.sampleRate = config.sampleRate;
+        streamConfig.channelCount = config.channels;
+        streamConfig.excludesCurrentProcessAudio = YES;
+
+        // Apply buffer size if specified (0 means use system default)
+        if (config.bufferSize > 0) {
+            // Calculate preferred IO buffer duration in seconds
+            // bufferSize is in frames, so duration = frames / sampleRate
+            double bufferDuration = (double)config.bufferSize / (double)config.sampleRate;
+            streamConfig.minimumFrameInterval = CMTimeMake((int64_t)(bufferDuration * 1000000), 1000000);
+        }
+
+        // Note: excludeCursor will be used when video capture is added
+        // For now it's stored in the config but not applied (audio-only capture)
 
         // For capturing app audio, we can use a display-based filter
         // or filter by application windows
@@ -327,7 +338,7 @@ bool ScreenCaptureKitWrapper::startCapture(int processId, std::function<void(con
 
         // Create and start the stream
         NSError *streamError = nil;
-        SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:config delegate:delegate];
+        SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:streamConfig delegate:delegate];
 
         if (!stream) {
             NSLog(@"Failed to create stream");

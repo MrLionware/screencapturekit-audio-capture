@@ -20,6 +20,20 @@ struct AppInfo {
     std::string applicationName;
 };
 
+struct CaptureConfig {
+    int sampleRate;          // Sample rate in Hz (e.g., 44100, 48000)
+    int channels;            // Number of channels (1 = mono, 2 = stereo)
+    int bufferSize;          // Buffer size for audio processing (0 = system default)
+    bool excludeCursor;      // Exclude cursor from capture (for future video features)
+
+    // Constructor with defaults
+    CaptureConfig()
+        : sampleRate(48000)
+        , channels(2)
+        , bufferSize(0)
+        , excludeCursor(true) {}
+};
+
 class ScreenCaptureKitWrapper {
 public:
     ScreenCaptureKitWrapper();
@@ -29,7 +43,7 @@ public:
     std::vector<AppInfo> getAvailableApps();
 
     // Start capturing audio from a specific app
-    bool startCapture(int processId, std::function<void(const AudioSample&)> callback);
+    bool startCapture(int processId, const CaptureConfig& config, std::function<void(const AudioSample&)> callback);
 
     // Stop capturing
     void stopCapture();

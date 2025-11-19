@@ -43,8 +43,6 @@ Napi::Object ScreenCaptureAddon::Init(Napi::Env env, Napi::Object exports) {
 
 ScreenCaptureAddon::ScreenCaptureAddon(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<ScreenCaptureAddon>(info) {
-    Napi::Env env = info.Env();
-
     wrapper_ = std::make_unique<ScreenCaptureKitWrapper>();
 }
 
@@ -84,8 +82,8 @@ Napi::Value ScreenCaptureAddon::GetAvailableApps(const Napi::CallbackInfo& info)
 Napi::Value ScreenCaptureAddon::StartCapture(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
 
-    if (info.Length() < 2) {
-        Napi::TypeError::New(env, "Expected 2 arguments: processId and callback").ThrowAsJavaScriptException();
+    if (info.Length() < 3) {
+        Napi::TypeError::New(env, "Expected 3 arguments: processId, config, and callback").ThrowAsJavaScriptException();
         return env.Null();
     }
 
@@ -94,13 +92,37 @@ Napi::Value ScreenCaptureAddon::StartCapture(const Napi::CallbackInfo& info) {
         return env.Null();
     }
 
-    if (!info[1].IsFunction()) {
-        Napi::TypeError::New(env, "Second argument must be a function (callback)").ThrowAsJavaScriptException();
+    if (!info[1].IsObject()) {
+        Napi::TypeError::New(env, "Second argument must be an object (config)").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    if (!info[2].IsFunction()) {
+        Napi::TypeError::New(env, "Third argument must be a function (callback)").ThrowAsJavaScriptException();
         return env.Null();
     }
 
     int processId = info[0].As<Napi::Number>().Int32Value();
-    Napi::Function callback = info[1].As<Napi::Function>();
+    Napi::Object configObj = info[1].As<Napi::Object>();
+    Napi::Function callback = info[2].As<Napi::Function>();
+
+    // Parse configuration options
+    CaptureConfig config;
+    if (configObj.Has("sampleRate")) {
+        config.sampleRate = configObj.Get("sampleRate").As<Napi::Number>().Int32Value();
+    }
+    if (configObj.Has("channels")) {
+        config.channels = configObj.Get("channels").As<Napi::Number>().Int32Value();
+    }
+    if (configObj.Has("bufferSize")) {
+        Napi::Value bufferSizeVal = configObj.Get("bufferSize");
+        if (!bufferSizeVal.IsUndefined()) {
+            config.bufferSize = bufferSizeVal.As<Napi::Number>().Int32Value();
+        }
+    }
+    if (configObj.Has("excludeCursor")) {
+        config.excludeCursor = configObj.Get("excludeCursor").As<Napi::Boolean>().Value();
+    }
 
     // Create thread-safe function for callback
     if (tsfn_) {
@@ -117,7 +139,7 @@ Napi::Value ScreenCaptureAddon::StartCapture(const Napi::CallbackInfo& info) {
     );
 
     // Start capture with callback
-    bool success = wrapper_->startCapture(processId, [this](const AudioSample& sample) {
+    bool success = wrapper_->startCapture(processId, config, [this](const AudioSample& sample) {
         // Call JavaScript callback from worker thread
         auto callback = [sample](Napi::Env env, Napi::Function jsCallback) {
             Napi::HandleScope scope(env);
@@ -138,7 +160,7 @@ Napi::Value ScreenCaptureAddon::StartCapture(const Napi::CallbackInfo& info) {
                 sampleObj.Set("timestamp", Napi::Number::New(env, sample.timestamp));
 
                 // Call the JavaScript callback - may throw
-                Napi::Value result = jsCallback.Call({sampleObj});
+                jsCallback.Call({sampleObj});
 
                 // Check if an exception occurred
                 if (env.IsExceptionPending()) {
