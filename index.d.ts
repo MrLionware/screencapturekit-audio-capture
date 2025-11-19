@@ -244,14 +244,65 @@ declare module 'screencapturekit-audio-addon' {
     getApplicationByPid(processId: number): AppInfo | null;
 
     /**
+     * Verify screen recording permissions
+     * Proactively checks if the app has necessary permissions before attempting capture
+     * @returns Permission status object with granted flag, message, and remediation steps
+     * @example
+     * const status = AudioCapture.verifyPermissions();
+     * if (!status.granted) {
+     *   console.error(status.message);
+     *   console.log(status.remediation);
+     * }
+     */
+    static verifyPermissions(): {
+      granted: boolean;
+      message: string;
+      remediation?: string;
+      availableApps?: number;
+    };
+
+    /**
+     * Get detailed status of current capture session
+     * @returns Status object with capture state, app info, and config, or null if not capturing
+     * @example
+     * const status = capture.getStatus();
+     * if (status) {
+     *   console.log(`Capturing from: ${status.app.applicationName}`);
+     * }
+     */
+    getStatus(): {
+      capturing: boolean;
+      processId: number;
+      app: AppInfo;
+      config: {
+        minVolume: number;
+        format: 'float32' | 'int16';
+      };
+    } | null;
+
+    /**
      * Start capturing audio from an application
      * @param appIdentifier - Application name, bundle ID, or process ID
      * @param options - Capture options
      * @returns true if capture started successfully
+     * @throws {AudioCaptureError} Throws structured error with code and details if capture fails
      *
      * @fires start
      * @fires audio
      * @fires error
+     *
+     * @example
+     * // Basic usage
+     * capture.startCapture('Spotify');
+     *
+     * // With error handling
+     * try {
+     *   capture.startCapture('Spotify', { minVolume: 0.01 });
+     * } catch (err) {
+     *   if (err.code === ErrorCodes.APP_NOT_FOUND) {
+     *     console.log('Available apps:', err.details.availableApps);
+     *   }
+     * }
      */
     startCapture(appIdentifier: string | number, options?: CaptureOptions): boolean;
 
