@@ -266,10 +266,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clear documentation of all sample properties and their types
 - Better organization of documentation for faster onboarding
 
+## [1.2.2] - 2025-11-18
+
+### Added - Smart App Selection
+- **`selectApp()` method:** Intelligent app selection with multiple fallback strategies
+  - Tries exact name match, PID, bundle ID, partial name match in order
+  - Accepts single identifier or array of identifiers to try in sequence
+  - Returns first available audio app when called with no arguments
+  - Supports `audioOnly` option to filter system apps (default: true)
+  - Supports `throwOnNotFound` option for error handling
+  - Eliminates manual app lookup boilerplate
+
+### Added - STT Streaming Utility
+- **`createSTTStream()` method:** Pre-configured stream for Speech-to-Text engines
+  - Automatically converts audio to Int16 mono format (most common STT input)
+  - Handles app selection with fallback support
+  - Auto-selects first available audio app if identifier not found
+  - Returns `STTConverter` transform stream ready to pipe to STT engines
+  - Includes `.app` property showing which app was selected
+  - Includes `.stop()` convenience method
+
+- **`STTConverter` class:** Transform stream for STT format conversion
+  - Converts Float32 to Int16 audio format
+  - Downmixes stereo to mono by averaging channels
+  - Supports both buffer mode and object mode (with metadata)
+  - Exported from main module for direct use if needed
+
+### Added - TypeScript Improvements
+- **Exportable Interfaces:** All interfaces now exported from main module
+  - `AppInfo`, `EnhancedAudioSample`, `CaptureOptions`, `StreamOptions`
+  - `SelectAppOptions`, `STTStreamOptions` interfaces added
+  - Can be imported in TypeScript projects: `import type { AppInfo } from '...'`
+  - No longer limited to `.d.ts` file only
+
+- **New Type Definitions:**
+  - `STTConverter` class with full type information
+  - `SelectAppOptions` interface for app selection options
+  - `STTStreamOptions` interface extending CaptureOptions
+  - Complete JSDoc comments for all new methods
+
+### Improved - Developer Experience
+- **Reduced Boilerplate:** `selectApp()` + `createSTTStream()` eliminate manual app lookup
+- **Better Streaming:** Direct pipe to STT engines without manual format conversion
+- **Flexible Selection:** Try multiple app names in order with automatic fallback
+- **TypeScript Support:** Proper type imports for better IDE autocomplete
+
+### Improved - Documentation
+- **Updated Quick Integration Guide:**
+  - STT integration now shows both `createSTTStream()` and manual approaches
+  - Examples demonstrate `selectApp()` for flexible app selection
+  - Clear comparison of simple vs manual approaches
+
+- **New API Reference Sections:**
+  - `selectApp()` with all options and usage examples
+  - `createSTTStream()` with pipeline examples
+  - Updated Module Exports to include `STTConverter`
+
+- **Example Updates:**
+  - STT example shows one-line stream creation
+  - Demonstrates fallback app selection
+  - Shows how to access selected app info from stream
+
 ## [Unreleased]
 
 ### Planned
 - Multiple simultaneous captures
-- Stream recording to file
+- Sample rate resampling in STTConverter
 - WebSocket streaming support
 - Audio effects/filters
