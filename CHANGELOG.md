@@ -216,6 +216,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stream implementation uses proper Node.js Readable patterns
 - Configuration validation and defaults in both JS and native layers
 
+## [1.2.1] - 2025-11-18
+
+### Added - Developer Experience Improvements
+- **Permission Verification:** New `AudioCapture.verifyPermissions()` static method
+  - Proactive permission checking before attempting capture
+  - Returns status object with `granted`, `message`, `remediation`, and `availableApps`
+  - Provides step-by-step instructions to fix permission issues
+
+- **Capture State Access:** New `getStatus()` method
+  - Returns detailed capture session state including app info and config
+  - Eliminates need to manually track capture metadata
+  - Returns `null` when not capturing for easy state checking
+
+- **Quick Integration Guide:** Comprehensive real-world examples in README
+  - Speech-to-Text (STT) integration pattern
+  - Voice agent / real-time processing with streams
+  - Audio monitoring and recording workflows
+  - Error-resilient production setup example
+  - Audio sample structure reference with all available properties
+
+### Improved - Error Handling
+- **Structured Error Throwing:** `startCapture()` now throws `AudioCaptureError` with code and details
+  - Synchronous error handling instead of relying only on events
+  - Errors include machine-readable codes (`ErrorCodes.APP_NOT_FOUND`, etc.)
+  - Still emits error event for backward compatibility (emit then throw)
+  - Detailed error context in `details` object with suggestions
+
+- **Enhanced Events:** Start and stop events now include full app metadata
+  - `start` event: `{ processId, app: { applicationName, bundleIdentifier, processId } }`
+  - `stop` event: `{ processId, app: { ... } }`
+  - Easier to track which app is being captured without manual bookkeeping
+
+### Added - Documentation
+- **API Reference Updates:**
+  - Documented `verifyPermissions()` static method
+  - Documented `getStatus()` method with return type details
+  - Updated `startCapture()` to show error throwing behavior
+  - Added error handling examples for all error codes
+
+- **Type Hints:**
+  - Complete audio sample structure reference in Quick Integration Guide
+  - TypeScript type definitions for new methods
+  - Enhanced `startCapture()` signature showing throws behavior
+
+### Improved - Discoverability
+- Updated Table of Contents to highlight Quick Integration Guide
+- Copy-paste ready code examples for common use cases
+- Clear documentation of all sample properties and their types
+- Better organization of documentation for faster onboarding
+
 ## [Unreleased]
 
 ### Planned
