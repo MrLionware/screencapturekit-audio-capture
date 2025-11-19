@@ -5,6 +5,7 @@
 
 const { ScreenCaptureKit } = require('./index');
 const EventEmitter = require('events');
+const { Readable } = require('stream');
 
 /**
  * Custom error class with machine-readable error codes
@@ -30,6 +31,127 @@ const ErrorCodes = {
   CAPTURE_FAILED: 'ERR_CAPTURE_FAILED',
   PROCESS_NOT_FOUND: 'ERR_PROCESS_NOT_FOUND',
 };
+
+/**
+ * Readable stream for audio capture
+ * Provides a stream-based alternative to the EventEmitter API
+ */
+class AudioStream extends Readable {
+  /**
+   * Create a new AudioStream
+   * @param {AudioCapture} capture - The AudioCapture instance to use
+   * @param {string|number} appIdentifier - Application name, bundle ID, or process ID
+   * @param {Object} options - Stream and capture options
+   * @param {number} options.minVolume - Minimum RMS volume threshold (0.0 to 1.0)
+   * @param {string} options.format - Audio format: 'float32' (default) or 'int16'
+   * @param {boolean} options.objectMode - Enable object mode to receive full sample objects instead of just raw audio data
+   * @private
+   */
+  constructor(capture, appIdentifier, options = {}) {
+    // Extract objectMode option, default to false for backward compatibility
+    const { objectMode = false, ...captureOptions } = options;
+
+    super({
+      objectMode,
+      highWaterMark: objectMode ? 16 : 16384 // 16 objects or 16KB of data
+    });
+
+    this._capture = capture;
+    this._appIdentifier = appIdentifier;
+    this._captureOptions = captureOptions;
+    this._objectMode = objectMode;
+    this._started = false;
+    this._audioHandler = null;
+    this._errorHandler = null;
+    this._stopHandler = null;
+  }
+
+  /**
+   * Internal method called when stream starts flowing
+   * @private
+   */
+  _read() {
+    // Start capture on first read if not already started
+    if (!this._started) {
+      this._started = true;
+
+      // Set up event handlers
+      this._audioHandler = (sample) => {
+        // Push sample data to the stream
+        // In object mode, push the entire sample object
+        // In normal mode, push just the raw audio buffer
+        const data = this._objectMode ? sample : sample.data;
+
+        if (!this.push(data)) {
+          // Backpressure - stream buffer is full
+          // In a more sophisticated implementation, we might pause the capture here
+        }
+      };
+
+      this._errorHandler = (error) => {
+        // Emit error and destroy the stream
+        this.destroy(error);
+      };
+
+      this._stopHandler = () => {
+        // Capture stopped externally, end the stream
+        this.push(null);
+      };
+
+      // Attach event handlers
+      this._capture.on('audio', this._audioHandler);
+      this._capture.on('error', this._errorHandler);
+      this._capture.on('stop', this._stopHandler);
+
+      // Start the capture
+      const success = this._capture.startCapture(this._appIdentifier, this._captureOptions);
+
+      if (!success) {
+        // If startCapture returns false, an error event will be emitted
+        // which will trigger _errorHandler and destroy the stream
+        return;
+      }
+    }
+  }
+
+  /**
+   * Internal method called when stream is being destroyed
+   * @private
+   */
+  _destroy(error, callback) {
+    // Clean up event listeners
+    if (this._audioHandler) {
+      this._capture.removeListener('audio', this._audioHandler);
+      this._capture.removeListener('error', this._errorHandler);
+      this._capture.removeListener('stop', this._stopHandler);
+      this._audioHandler = null;
+      this._errorHandler = null;
+      this._stopHandler = null;
+    }
+
+    // Stop capture if it's still running
+    if (this._capture.isCapturing()) {
+      this._capture.stopCapture();
+    }
+
+    callback(error);
+  }
+
+  /**
+   * Get information about the current capture
+   * @returns {Object|null} Current capture info or null if not capturing
+   */
+  getCurrentCapture() {
+    return this._capture.getCurrentCapture();
+  }
+
+  /**
+   * Stop the stream and underlying capture
+   */
+  stop() {
+    this.push(null); // Signal end of stream
+  }
+}
 
 class AudioCapture extends EventEmitter {
   constructor() {
@@ -139,6 +261,10 @@ class AudioCapture extends EventEmitter {
    * @param {Object} options - Capture options
    * @param {number} options.minVolume - Minimum RMS volume threshold (0.0 to 1.0). Only emit audio events when volume exceeds this level
    * @param {string} options.format - Audio format: 'float32' (default) or 'int16'
+   * @param {number} options.sampleRate - Sample rate in Hz (e.g., 44100, 48000). Default: 48000
+   * @param {number} options.channels - Number of audio channels: 1 (mono) or 2 (stereo). Default: 2
+   * @param {number} options.bufferSize - Buffer size for audio processing. Smaller values = lower latency but higher CPU usage
+   * @param {boolean} options.excludeCursor - Exclude cursor from capture (for future video features). Default: true
    * @returns {boolean} true if capture started successfully
    *
    * @fires AudioCapture#start
@@ -151,6 +277,7 @@ class AudioCapture extends EventEmitter {
    * capture.startCapture(12345); // PID
    * capture.startCapture('Spotify', { minVolume: 0.01 }); // Only emit when volume > 0.01
    * capture.startCapture('Spotify', { format: 'int16' }); // Convert to Int16
+   * capture.startCapture('Spotify', { sampleRate: 44100, channels: 1 }); // Custom audio config
    */
   startCapture(appIdentifier, options = {}) {
     if (this.capturing) {
@@ -162,10 +289,18 @@ class AudioCapture extends EventEmitter {
       return false;
     }
 
-    // Store options for use in callback
+    // Store options for use in callback (JavaScript-level processing)
     this.captureOptions = {
       minVolume: options.minVolume || 0,
       format: options.format || 'float32',
+    };
+
+    // Prepare native configuration options
+    const nativeConfig = {
+      sampleRate: options.sampleRate || 48000,
+      channels: options.channels || 2,
+      bufferSize: options.bufferSize,
+      excludeCursor: options.excludeCursor !== undefined ? options.excludeCursor : true,
     };
 
     let processId;
@@ -226,7 +361,7 @@ class AudioCapture extends EventEmitter {
       return false;
     }
 
-    const success = this.captureKit.startCapture(processId, (sample) => {
+    const success = this.captureKit.startCapture(processId, nativeConfig, (sample) => {
       // Enhance sample with computed properties
       const rms = this._calculateRMS(sample.data);
       const peak = this._calculatePeak(sample.data);
@@ -356,6 +491,41 @@ class AudioCapture extends EventEmitter {
       processId: this.currentProcessId,
       app: this.getApplicationByPid(this.currentProcessId),
     };
+  }
+
+  /**
+   * Create a readable stream for audio capture
+   * Provides a stream-based alternative to the event-based API
+   * @param {string|number} appIdentifier - Application name, bundle ID, or process ID
+   * @param {Object} options - Stream and capture options
+   * @param {number} options.minVolume - Minimum RMS volume threshold (0.0 to 1.0)
+   * @param {string} options.format - Audio format: 'float32' (default) or 'int16'
+   * @param {boolean} options.objectMode - Enable object mode to receive full sample objects instead of just raw audio data (default: false)
+   * @returns {AudioStream} Readable stream that emits audio data
+   *
+   * @example
+   * // Stream raw audio buffers
+   * const audioStream = capture.createAudioStream('Spotify');
+   * audioStream.pipe(myProcessor);
+   *
+   * @example
+   * // Stream full sample objects (with metadata)
+   * const audioStream = capture.createAudioStream('Spotify', { objectMode: true });
+   * audioStream.on('data', (sample) => {
+   *   console.log(`Sample rate: ${sample.sampleRate}, RMS: ${sample.rms}`);
+   * });
+   *
+   * @example
+   * // Use with pipeline for error handling
+   * const { pipeline } = require('stream');
+   * const fs = require('fs');
+   * const audioStream = capture.createAudioStream('Spotify', { format: 'int16' });
+   * pipeline(audioStream, myProcessor, fs.createWriteStream('output.raw'), (err) => {
+   *   if (err) console.error('Pipeline failed:', err);
+   * });
+   */
+  createAudioStream(appIdentifier, options = {}) {
+    return new AudioStream(this, appIdentifier, options);
   }
 
   /**
@@ -502,11 +672,105 @@ class AudioCapture extends EventEmitter {
       return AudioCapture.rmsToDb(rms);
     }
   }
+
+  /**
+   * Create a WAV file from PCM audio data
+   * @static
+   * @param {Buffer} buffer - PCM audio data (Float32 or Int16)
+   * @param {Object} options - WAV file options
+   * @param {number} options.sampleRate - Sample rate in Hz (e.g., 48000)
+   * @param {number} options.channels - Number of channels (e.g., 2 for stereo)
+   * @param {string} [options.format='float32'] - Audio format: 'float32' or 'int16'
+   * @returns {Buffer} Complete WAV file that can be written to disk
+   * @example
+   * const fs = require('fs');
+   *
+   * capture.on('audio', (sample) => {
+   *   const wav = AudioCapture.writeWav(sample.data, {
+   *     sampleRate: sample.sampleRate,
+   *     channels: sample.channels,
+   *     format: sample.format
+   *   });
+   *   fs.writeFileSync('output.wav', wav);
+   * });
+   */
+  static writeWav(buffer, options) {
+    const { sampleRate, channels, format = 'float32' } = options;
+
+    // Validate required options
+    if (!sampleRate || !channels) {
+      throw new Error('sampleRate and channels are required options');
+    }
+
+    if (format !== 'float32' && format !== 'int16') {
+      throw new Error('format must be "float32" or "int16"');
+    }
+
+    // Calculate WAV format parameters
+    const isFloat = format === 'float32';
+    const audioFormat = isFloat ? 3 : 1; // 3 = IEEE Float, 1 = PCM
+    const bitsPerSample = isFloat ? 32 : 16;
+    const bytesPerSample = bitsPerSample / 8;
+    const blockAlign = channels * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+
+    // Data size
+    const dataSize = buffer.length;
+    const fileSize = 36 + dataSize; // 36 bytes of headers + data
+
+    // Create buffer for complete WAV file
+    const wavBuffer = Buffer.allocUnsafe(44 + dataSize);
+    let offset = 0;
+
+    // Helper to write strings
+    const writeString = (str) => {
+      for (let i = 0; i < str.length; i++) {
+        wavBuffer[offset++] = str.charCodeAt(i);
+      }
+    };
+
+    // Helper to write 32-bit little-endian integer
+    const writeUInt32LE = (value) => {
+      wavBuffer.writeUInt32LE(value, offset);
+      offset += 4;
+    };
+
+    // Helper to write 16-bit little-endian integer
+    const writeUInt16LE = (value) => {
+      wavBuffer.writeUInt16LE(value, offset);
+      offset += 2;
+    };
+
+    // RIFF header
+    writeString('RIFF');
+    writeUInt32LE(fileSize);
+    writeString('WAVE');
+
+    // fmt chunk
+    writeString('fmt ');
+    writeUInt32LE(16); // fmt chunk size
+    writeUInt16LE(audioFormat); // audio format (1=PCM, 3=IEEE Float)
+    writeUInt16LE(channels); // number of channels
+    writeUInt32LE(sampleRate); // sample rate
+    writeUInt32LE(byteRate); // byte rate
+    writeUInt16LE(blockAlign); // block align
+    writeUInt16LE(bitsPerSample); // bits per sample
+
+    // data chunk
+    writeString('data');
+    writeUInt32LE(dataSize);
+
+    // Copy audio data
+    buffer.copy(wavBuffer, offset);
+
+    return wavBuffer;
+  }
 }
 
 // Export both the wrapper class and the raw native binding
 module.exports = AudioCapture;
 module.exports.AudioCapture = AudioCapture;
+module.exports.AudioStream = AudioStream;
 module.exports.ScreenCaptureKit = ScreenCaptureKit;
 module.exports.AudioCaptureError = AudioCaptureError;
 module.exports.ErrorCodes = ErrorCodes;
