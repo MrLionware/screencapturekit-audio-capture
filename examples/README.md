@@ -1,101 +1,194 @@
 # Examples
 
-This directory contains example code for using the ScreenCaptureKit Audio Capture package.
+This directory contains focused examples demonstrating the key features of ScreenCaptureKit Audio Capture.
 
-## Running Examples
+## Quick Start
 
-All examples require Screen Recording permission to be granted in System Preferences.
-
-### Example 1: Simple SDK Usage
-
+Run any example:
 ```bash
-node example-sdk.js Safari
+node examples/1-basic-usage.js
 ```
 
-Shows basic usage of the high-level SDK with event-based API.
+## Examples Overview
 
-### Example 2: Integration Demos
+### 1. Basic Usage (`1-basic-usage.js`)
+**What it covers:**
+- Starting and stopping audio capture
+- Receiving audio samples via events
+- Volume threshold filtering
+- Working with audio buffers (Buffer → Float32Array)
+- Calculating RMS/Peak/dB levels
+- Saving captured audio to WAV files
 
-```bash
-# Simple audio monitor
-node demo-integration.js 1 Safari
-
-# Record to buffer
-node demo-integration.js 2 Music
-
-# Volume meter with visualization
-node demo-integration.js 3 Spotify
-
-# Multi-app monitoring
-node demo-integration.js 4
-
-# Error handling example
-node demo-integration.js 5 Safari
-```
-
-### Example 3: Finding and Filtering Apps
+**Use this when:** You're getting started or want to use the event-based API.
 
 ```bash
-node find-apps-example.js
+node examples/1-basic-usage.js
 ```
 
-Demonstrates:
-- Getting all available applications
-- Filtering for audio apps only
-- Finding apps by name (case-insensitive)
-- Finding apps by bundle identifier
-- Finding apps by process ID
+---
 
-### Example 4: Volume Threshold (Smart Audio Detection)
+### 2. Stream API (`2-stream-api.js`)
+**What it covers:**
+- Using Node.js Readable streams for audio
+- Object mode vs normal mode
+- Piping to transforms and writable streams
+- Using `pipeline()` for error handling
+- Real-time audio processing with transforms
+- Live volume meter example
+
+**Use this when:** You want composable, stream-based audio processing.
+
+**Run different examples:**
+```bash
+node examples/2-stream-api.js 1  # Object mode with metadata
+node examples/2-stream-api.js 2  # Normal mode (raw buffers)
+node examples/2-stream-api.js 3  # Pipeline with WAV file
+node examples/2-stream-api.js 4  # Real-time volume meter
+```
+
+---
+
+### 3. Advanced Configuration (`3-advanced-config.js`)
+**What it covers:**
+- Sample rate configuration (with system limitations explained)
+- Channel configuration (mono/stereo)
+- Buffer size control (latency vs CPU trade-off)
+- Format selection (float32 vs int16)
+- Data reduction strategies
+- Configuration presets
+
+**Use this when:** You need to optimize for latency, bandwidth, or CPU usage.
+
+**Configuration presets:**
+```bash
+node examples/3-advanced-config.js 1  # Low latency
+node examples/3-advanced-config.js 2  # Efficient (75% data reduction)
+node examples/3-advanced-config.js 3  # High quality
+node examples/3-advanced-config.js 4  # Custom settings
+```
+
+**Custom settings:**
+```bash
+node examples/3-advanced-config.js 4 48000 1 2048 int16
+#                                    │ │     │ │     └─ format
+#                                    │ │     │ └─ buffer size
+#                                    │ │     └─ channels
+#                                    │ └─ sample rate
+#                                    └─ preset #4 (custom)
+```
+
+---
+
+### 4. Finding Applications (`4-finding-apps.js`)
+**What it covers:**
+- Getting all capturable applications
+- Filtering to audio-likely apps
+- Searching by name (case-insensitive, partial match)
+- Searching by bundle ID
+- Looking up by process ID
+- Custom filtering strategies
+
+**Use this when:** You need to discover or filter available applications.
 
 ```bash
-node volume-threshold-example.js
+node examples/4-finding-apps.js
 ```
 
-Shows how to use the `minVolume` option to only receive audio events when sound is actually present, filtering out silence. Great for:
-- Saving CPU by not processing silent audio
-- Detecting when audio playback starts/stops
-- Reducing bandwidth when streaming
+---
 
-### Example 5: Int16 Format Conversion
+## Example Progression
 
-```bash
-node int16-format-example.js
-```
+**Recommended learning path:**
 
-Demonstrates capturing audio in Int16 format instead of Float32. This is useful when working with audio libraries that expect Int16 data. Also shows how to save the recorded audio to a file.
+1. Start with `1-basic-usage.js` to understand the event-based API
+2. Explore `2-stream-api.js` for stream-based processing
+3. Review `4-finding-apps.js` to learn app discovery
+4. Use `3-advanced-config.js` when you need optimization
 
-### Example 6: Buffer Conversion Helper
+## Common Patterns
 
-```bash
-node buffer-conversion-example.js
-```
-
-Shows how to use `AudioCapture.bufferToFloat32Array()` to easily convert the Buffer data to Float32Array for audio processing. Includes examples of calculating audio metrics from the samples.
-
-## Usage in Your Project
-
-After installing the package:
-
-```bash
-npm install screencapturekit-audio-capture
-```
-
-Basic usage:
-
+### Capture audio for 5 seconds and save to WAV
 ```javascript
 const AudioCapture = require('screencapturekit-audio-capture');
+const fs = require('fs');
+
+const capture = new AudioCapture();
+const chunks = [];
+
+capture.on('audio', (sample) => {
+  chunks.push(sample.data);
+});
+
+capture.on('stop', () => {
+  const combined = Buffer.concat(chunks);
+  const wav = AudioCapture.writeWav(combined, {
+    sampleRate: 48000,
+    channels: 2,
+    format: 'float32'
+  });
+  fs.writeFileSync('output.wav', wav);
+});
+
+capture.startCapture('Spotify', { minVolume: 0.01 });
+setTimeout(() => capture.stopCapture(), 5000);
+```
+
+### Stream audio with custom processing
+```javascript
+const AudioCapture = require('screencapturekit-audio-capture');
+const { Transform } = require('stream');
 
 const capture = new AudioCapture();
 
-capture.on('audio', (sample) => {
-  const db = AudioCapture.rmsToDb(sample.rms);
-  console.log(`Volume: ${db.toFixed(1)} dB`);
+const processor = new Transform({
+  objectMode: true,
+  transform(sample, encoding, callback) {
+    // Process sample
+    console.log(`RMS: ${sample.rms}`);
+    this.push(sample);
+    callback();
+  }
 });
 
-capture.startCapture('Music');
-
-setTimeout(() => capture.stopCapture(), 10000);
+capture.createAudioStream('Spotify', { objectMode: true })
+  .pipe(processor);
 ```
 
-See the main README.md for complete API documentation.
+### Efficient configuration (minimize bandwidth)
+```javascript
+capture.startCapture('Spotify', {
+  channels: 1,       // Mono: -50% data
+  format: 'int16',   // Int16: -50% data
+  bufferSize: 4096,  // Larger buffer: lower CPU
+  minVolume: 0.01    // Filter silence
+});
+// Result: 75% less data than default
+```
+
+## Tips
+
+- **Change the app name**: All examples use `'Spotify'` by default. Change this to any running app on your system.
+- **Volume threshold**: Use `minVolume: 0.01` to filter out silence and save CPU.
+- **Check available apps**: Run `4-finding-apps.js` to see what's available on your system.
+- **Permissions**: Ensure Screen Recording permission is granted in System Preferences → Privacy & Security.
+
+## Testing Examples
+
+To test if examples work with your system:
+
+```bash
+# First, check what apps are available
+node examples/4-finding-apps.js
+
+# Then try basic capture
+node examples/1-basic-usage.js
+
+# Play some audio in the target app (e.g., Spotify)
+```
+
+## Need Help?
+
+- Check the main README for API documentation
+- Review `TEST-REPORT.md` for implementation details
+- See `test-suite.js` for comprehensive testing examples
