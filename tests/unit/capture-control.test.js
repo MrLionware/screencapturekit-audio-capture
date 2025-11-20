@@ -1,0 +1,251 @@
+/**
+ * Unit Tests: Capture Control
+ *
+ * Tests for AudioCapture initialization and capture control:
+ * - AudioCapture initialization
+ * - Starting and stopping capture
+ * - Audio processing (RMS, format conversion, volume threshold)
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { createTestContext, createCaptureContext } = require('../helpers/test-context');
+const { createNativeMock } = require('../fixtures/mock-native');
+const { loadSDKWithMock } = require('../helpers/test-utils');
+const { MOCK_APPS } = require('../fixtures/mock-data');
+
+test('Capture Control', async (t) => {
+  await t.test('Initialization', async (t) => {
+    await t.test('should initialize correctly', () => {
+      const mockNative = createNativeMock({ apps: MOCK_APPS });
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      assert.ok(capture instanceof AudioCapture);
+      assert.equal(capture.capturing, false);
+      assert.equal(capture.currentProcessId, null);
+
+      // Test activity tracking via public API
+      const info = capture.getActivityInfo();
+      assert.equal(info.enabled, false, 'Activity tracking should be disabled by default');
+      assert.equal(info.trackedApps, 0);
+      assert.ok(Array.isArray(info.recentApps));
+    });
+  });
+
+  await t.test('Start and Stop', async (t) => {
+    await t.test('should start capturing with valid app name', () => {
+      let capturedCallback = null;
+      let startCaptureCalledWith = null;
+
+      const mockNative = {
+        ScreenCaptureKit: class {
+          getAvailableApps() {
+            return MOCK_APPS;
+          }
+          startCapture(pid, config, callback) {
+            startCaptureCalledWith = { pid, config };
+            capturedCallback = callback;
+            return true;
+          }
+          stopCapture() {}
+        }
+      };
+
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      const success = capture.startCapture('Music Player');
+      assert.equal(success, true);
+      assert.equal(capture.isCapturing(), true);
+      assert.equal(startCaptureCalledWith.pid, 200);
+      assert.equal(typeof capturedCallback, 'function');
+
+      capture.stopCapture();
+    });
+
+    await t.test('should fail when already capturing', () => {
+      let capturedCallback = null;
+
+      const mockNative = {
+        ScreenCaptureKit: class {
+          getAvailableApps() {
+            return MOCK_APPS;
+          }
+          startCapture(pid, config, callback) {
+            capturedCallback = callback;
+            return true;
+          }
+          stopCapture() {}
+        }
+      };
+
+      const { AudioCapture, ErrorCodes } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      capture.startCapture('Music Player');
+
+      let errorEmitted = null;
+      capture.once('error', (err) => {
+        errorEmitted = err;
+      });
+
+      assert.throws(() => {
+        capture.startCapture('Example App');
+      }, (err) => {
+        assert.equal(err.code, ErrorCodes.ALREADY_CAPTURING);
+        return true;
+      });
+
+      assert.ok(errorEmitted);
+      assert.equal(errorEmitted.code, ErrorCodes.ALREADY_CAPTURING);
+
+      capture.stopCapture();
+    });
+
+    await t.test('should stop capturing', (t, done) => {
+      let stopCaptureCalled = false;
+
+      const mockNative = {
+        ScreenCaptureKit: class {
+          getAvailableApps() {
+            return MOCK_APPS;
+          }
+          startCapture(pid, config, callback) {
+            return true;
+          }
+          stopCapture() {
+            stopCaptureCalled = true;
+          }
+        }
+      };
+
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      capture.startCapture('Music Player');
+
+      capture.once('stop', (data) => {
+        assert.equal(data.processId, 200);
+        assert.equal(capture.isCapturing(), false);
+        assert.equal(stopCaptureCalled, true);
+        done();
+      });
+
+      capture.stopCapture();
+    });
+  });
+
+  await t.test('Audio Processing', async (t) => {
+    await t.test('should process RMS and format conversion', (t, done) => {
+      let capturedCallback = null;
+
+      const mockNative = {
+        ScreenCaptureKit: class {
+          getAvailableApps() {
+            return MOCK_APPS;
+          }
+          startCapture(pid, config, callback) {
+            capturedCallback = callback;
+            return true;
+          }
+          stopCapture() {}
+        }
+      };
+
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      capture.startCapture('Music Player', {
+        format: 'int16',
+        minVolume: 0.1
+      });
+
+      // Create a mock float buffer
+      const floatData = new Float32Array(1024);
+      for (let i = 0; i < floatData.length; i++) {
+        floatData[i] = 0.5; // constant value
+      }
+      const buffer = Buffer.from(floatData.buffer);
+
+      const mockSample = {
+        data: buffer,
+        sampleRate: 48000,
+        channelCount: 2,
+        timestamp: 1234567890
+      };
+
+      capture.once('audio', (sample) => {
+        // Verify format conversion
+        assert.equal(sample.format, 'int16');
+        assert.ok(sample.data instanceof Buffer);
+        // Int16 value for 0.5 should be around 16384 (0.5 * 32767)
+        const int16View = new Int16Array(sample.data.buffer, sample.data.byteOffset, sample.data.length / 2);
+        assert.ok(Math.abs(int16View[0] - 16384) < 5);
+
+        // Verify computed properties
+        assert.equal(sample.sampleRate, 48000);
+        assert.equal(sample.channels, 2);
+        assert.ok(sample.rms > 0);
+        assert.ok(sample.peak > 0);
+        assert.equal(sample.sampleCount, 1024);
+        assert.equal(sample.framesCount, 512);
+        assert.ok(Math.abs(sample.durationMs - 10.6667) < 0.01);
+        assert.equal(sample.timestamp, 1234567890);
+
+        capture.stopCapture();
+        done();
+      });
+
+      // Simulate native callback
+      capturedCallback(mockSample);
+    });
+
+    await t.test('should filter audio below volume threshold', (t) => {
+      let capturedCallback = null;
+
+      const mockNative = {
+        ScreenCaptureKit: class {
+          getAvailableApps() {
+            return MOCK_APPS;
+          }
+          startCapture(pid, config, callback) {
+            capturedCallback = callback;
+            return true;
+          }
+          stopCapture() {}
+        }
+      };
+
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      capture.startCapture('Music Player', {
+        minVolume: 0.8
+      }); // High threshold
+
+      let audioEmitted = false;
+      const handler = () => {
+        audioEmitted = true;
+      };
+      capture.on('audio', handler);
+
+      // Create quiet sample (0.1 amplitude)
+      const floatData = new Float32Array(100);
+      floatData.fill(0.1);
+      const buffer = Buffer.from(floatData.buffer);
+
+      capturedCallback({
+        data: buffer,
+        sampleRate: 48000,
+        channelCount: 2,
+        timestamp: 100
+      });
+
+      assert.equal(audioEmitted, false, 'Should not emit audio below threshold');
+
+      capture.removeListener('audio', handler);
+      capture.stopCapture();
+    });
+  });
+});

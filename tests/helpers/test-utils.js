@@ -153,6 +153,7 @@ class MockAudioStream extends Readable {
     super({ objectMode: options.objectMode || false });
     this.captureInfo = options.captureInfo || null;
     this.stopCalls = 0;
+    this._objectMode = Boolean(options.objectMode);
   }
 
   _read() { }
@@ -176,6 +177,26 @@ class MockAudioStream extends Readable {
   }
 }
 
+class MockSTTStream extends Readable {
+  constructor(options = {}) {
+    super({ objectMode: Boolean(options.objectMode || true) });
+    this.app = options.app || null;
+    this.stopped = false;
+  }
+
+  _read() { }
+
+  emitSample(sample) {
+    this.push(sample);
+  }
+
+  stop() {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.push(null);
+  }
+}
+
 function createAudioCaptureMock(options = {}) {
   const apps = options.apps || [
     {
@@ -185,6 +206,24 @@ function createAudioCaptureMock(options = {}) {
     }
   ];
   const audioApps = options.audioApps || apps;
+  const windows = options.windows || [{
+    windowId: 9001,
+    layer: 0,
+    frame: { x: 0, y: 0, width: 800, height: 600 },
+    title: 'Mock Player Window',
+    onScreen: true,
+    active: true,
+    owningProcessId: apps[0]?.processId || 101,
+    owningApplicationName: apps[0]?.applicationName || 'Mock Player',
+    owningBundleIdentifier: apps[0]?.bundleIdentifier || 'com.example.mock'
+  }];
+  const displays = options.displays || [{
+    displayId: 77,
+    frame: { x: 0, y: 0, width: 1440, height: 900 },
+    width: 1440,
+    height: 900,
+    isMainDisplay: true
+  }];
 
   class MockAudioCapture extends EventEmitter {
     constructor() {
@@ -195,9 +234,35 @@ function createAudioCaptureMock(options = {}) {
       this.capturing = false;
       this.apps = apps;
       this.audioApps = audioApps;
+      this.windows = windows;
+      this.displays = displays;
       this.currentApp = null;
       this.currentProcessId = null;
+      this._currentTarget = null;
+      this.captureOptions = { minVolume: 0, format: 'float32' };
+      this._activityTrackingEnabled = false;
+      this._activityDecayMs = 30000;
+      this._activityEntries = [];
       MockAudioCapture.instances.push(this);
+    }
+
+    enableActivityTracking(options = {}) {
+      const { decayMs = 30000 } = options;
+      this._activityTrackingEnabled = true;
+      this._activityDecayMs = decayMs;
+    }
+
+    disableActivityTracking() {
+      this._activityTrackingEnabled = false;
+      this._activityEntries = [];
+    }
+
+    getActivityInfo() {
+      return {
+        enabled: this._activityTrackingEnabled,
+        trackedApps: this._activityEntries.length,
+        recentApps: [...this._activityEntries]
+      };
     }
 
     getApplications() {
@@ -208,7 +273,24 @@ function createAudioCaptureMock(options = {}) {
       if (opts.includeSystemApps) {
         return [...this.apps];
       }
-      return [...this.audioApps];
+      if (opts.includeEmpty) {
+        return [...this.audioApps];
+      }
+      return this.audioApps.filter(app => app.applicationName && app.applicationName.trim().length > 0);
+    }
+
+    getWindows(options = {}) {
+      const { onScreenOnly = false, requireTitle = false, processId } = options;
+      return this.windows.filter((window) => {
+        if (onScreenOnly && !window.onScreen) return false;
+        if (requireTitle && (!window.title || window.title.trim().length === 0)) return false;
+        if (typeof processId === 'number' && window.owningProcessId !== processId) return false;
+        return true;
+      });
+    }
+
+    getDisplays() {
+      return [...this.displays];
     }
 
     findApplication(identifier) {
@@ -231,26 +313,128 @@ function createAudioCaptureMock(options = {}) {
       return this.apps.find(app => app.processId === pid) || null;
     }
 
-    startCapture(identifier, captureOptions = {}) {
-      this.startCalls.push({ identifier, options: captureOptions });
-      this.capturing = true;
+    selectApp(identifiers = null, opts = {}) {
+      const { audioOnly = true, throwOnNotFound = false } = opts;
+      const candidates = audioOnly ? this.getAudioApps() : this.getApplications();
+      const hasIdentifiers = identifiers !== null && identifiers !== undefined;
+      const normalized = Array.isArray(identifiers)
+        ? identifiers
+        : hasIdentifiers ? [identifiers] : [];
 
-      const appInfo = typeof identifier === 'number'
+      if (!hasIdentifiers) {
+        return candidates[0] || null;
+      }
+
+      for (const identifier of normalized) {
+        if (typeof identifier === 'number') {
+          const app = candidates.find(a => a.processId === identifier);
+          if (app) return app;
+          continue;
+        }
+
+        const search = String(identifier).toLowerCase();
+        const exact = candidates.find(a => a.applicationName.toLowerCase() === search || a.bundleIdentifier.toLowerCase() === search);
+        if (exact) return exact;
+
+        const partial = candidates.find(a => a.applicationName.toLowerCase().includes(search));
+        if (partial) return partial;
+      }
+
+      if (throwOnNotFound) {
+        throw new Error('Mock selectApp could not find requested app');
+      }
+      return null;
+    }
+
+    startCapture(identifier, captureOptions = {}) {
+      const processId = typeof identifier === 'number'
+        ? identifier
+        : this.findApplication(identifier)?.processId;
+
+      const targetApp = typeof identifier === 'number'
         ? this.getApplicationByPid(identifier)
         : this.findApplication(identifier);
 
-      this.currentApp = appInfo || null;
-      this.currentProcessId = (appInfo && appInfo.processId) || (typeof identifier === 'number' ? identifier : 0);
+      const target = {
+        type: 'application',
+        identifier,
+        processId: processId || 0,
+        app: targetApp || null,
+        window: null,
+        display: null
+      };
 
-      if (options.onStart) {
-        options.onStart({ identifier, captureOptions, instance: this });
+      return this._beginCapture(target, captureOptions);
+    }
+
+    captureWindow(windowId, captureOptions = {}) {
+      const windowInfo = this.getWindows().find(win => win.windowId === windowId);
+      if (!windowInfo) {
+        throw new Error(`Window ${windowId} not found`);
       }
 
-      const startEvent = {
-        processId: this.currentProcessId,
-        app: this.currentApp
+      const target = {
+        type: 'window',
+        identifier: windowId,
+        processId: windowInfo.owningProcessId || 0,
+        app: this.getApplicationByPid(windowInfo.owningProcessId) || null,
+        window: windowInfo,
+        display: null
       };
-      this.emit('start', startEvent);
+
+      return this._beginCapture(target, captureOptions);
+    }
+
+    captureDisplay(displayId, captureOptions = {}) {
+      const displayInfo = this.getDisplays().find(display => display.displayId === displayId);
+      if (!displayInfo) {
+        throw new Error(`Display ${displayId} not found`);
+      }
+
+      const target = {
+        type: 'display',
+        identifier: displayId,
+        processId: null,
+        app: null,
+        window: null,
+        display: displayInfo
+      };
+
+      return this._beginCapture(target, captureOptions);
+    }
+
+    _beginCapture(target, captureOptions) {
+      this.captureOptions = {
+        minVolume: captureOptions.minVolume || 0,
+        format: captureOptions.format || 'float32'
+      };
+      this.startCalls.push({ identifier: target.identifier, options: captureOptions, targetType: target.type });
+      this.capturing = true;
+      this.currentApp = target.app;
+      this.currentProcessId = target.processId || null;
+      this._currentTarget = target;
+
+      if (options.onStart) {
+        options.onStart({ identifier: target.identifier, captureOptions, instance: this });
+      }
+
+      if (target.app && this._activityTrackingEnabled) {
+        this._activityEntries.push({
+          processId: target.app.processId,
+          lastSeen: Date.now(),
+          ageMs: 0,
+          avgRMS: 0.5,
+          sampleCount: 1
+        });
+      }
+
+      this.emit('start', {
+        processId: this.currentProcessId,
+        app: this.currentApp,
+        window: target.window,
+        display: target.display,
+        targetType: target.type
+      });
 
       return options.startCaptureResult !== undefined ? options.startCaptureResult : true;
     }
@@ -262,22 +446,44 @@ function createAudioCaptureMock(options = {}) {
 
       this.stopCalls += 1;
       this.capturing = false;
-      const processId = this.currentProcessId;
+      const snapshot = this.getStatus();
       this.currentProcessId = null;
-      this.emit('stop', { processId });
+      this.currentApp = null;
+      this._currentTarget = null;
+      this.emit('stop', snapshot || { processId: null });
     }
 
     isCapturing() {
       return this.capturing;
     }
 
+    getStatus() {
+      if (!this.capturing || !this._currentTarget) {
+        return null;
+      }
+
+      return {
+        capturing: true,
+        processId: this._currentTarget.processId,
+        app: this._currentTarget.app,
+        window: this._currentTarget.window,
+        display: this._currentTarget.display,
+        targetType: this._currentTarget.type,
+        config: { ...this.captureOptions }
+      };
+    }
+
     getCurrentCapture() {
-      if (!this.capturing || !this.currentApp) {
+      const status = this.getStatus();
+      if (!status) {
         return null;
       }
       return {
-        processId: this.currentApp.processId,
-        app: this.currentApp
+        processId: status.processId,
+        app: status.app,
+        window: status.window,
+        display: status.display,
+        targetType: status.targetType
       };
     }
 
@@ -286,16 +492,46 @@ function createAudioCaptureMock(options = {}) {
         ? options.createAudioStream(identifier, streamOptions)
         : new MockAudioStream({
           objectMode: Boolean(streamOptions.objectMode),
-          captureInfo: this.currentApp
+          captureInfo: this._currentTarget
         });
 
       this.streams.push({ identifier, options: streamOptions, stream });
       return stream;
     }
+
+    createSTTStream(identifier, sttOptions = {}) {
+      const stream = this.createAudioStream(identifier || this.audioApps[0]?.applicationName, {
+        objectMode: true,
+        minVolume: sttOptions.minVolume || 0,
+        format: 'float32'
+      });
+
+      const sttStream = new MockSTTStream({ objectMode: true });
+      sttStream.app = this.selectApp(identifier) || this.audioApps[0] || null;
+
+      stream.on('data', (sample) => {
+        const converted = {
+          ...sample,
+          format: sttOptions.format || 'int16',
+          channels: sttOptions.channels || 1
+        };
+        sttStream.emitSample(converted);
+      });
+
+      stream.on('end', () => sttStream.stop());
+      stream.on('error', (err) => sttStream.destroy(err));
+      sttStream.stop = () => {
+        stream.stop?.();
+        sttStream.emit('end');
+      };
+
+      return sttStream;
+    }
   }
 
   MockAudioCapture.instances = [];
   MockAudioCapture.MockAudioStream = MockAudioStream;
+  MockAudioCapture.MockSTTStream = MockSTTStream;
   MockAudioCapture.writeWavCalls = [];
 
   MockAudioCapture.bufferToFloat32Array = options.bufferToFloat32Array || ((buffer) => {
@@ -320,6 +556,12 @@ function createAudioCaptureMock(options = {}) {
     return 20 * Math.log10(value);
   });
 
+  MockAudioCapture.verifyPermissions = () => ({
+    granted: true,
+    message: `Mock permission granted (${apps.length} apps visible)`,
+    availableApps: apps.length
+  });
+
   MockAudioCapture.writeWav = (buffer, wavOptions) => {
     const wavBuffer = Buffer.alloc(44 + buffer.length);
     MockAudioCapture.writeWavCalls.push({ buffer, options: wavOptions, result: wavBuffer });
@@ -337,6 +579,7 @@ module.exports = {
   createFsMock,
   createAudioCaptureMock,
   MockAudioStream,
+  MockSTTStream,
   loadSDKWithMock
 };
 
