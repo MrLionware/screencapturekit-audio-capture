@@ -56,6 +56,42 @@ declare module 'screencapturekit-audio-addon' {
   }
 
   /**
+   * Rectangle coordinates helper
+   */
+  export interface Rect {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }
+
+  /**
+   * Capturable window information
+   */
+  export interface WindowInfo {
+    windowId: number;
+    layer: number;
+    frame: Rect;
+    title: string;
+    onScreen: boolean;
+    active: boolean;
+    owningProcessId: number;
+    owningApplicationName: string;
+    owningBundleIdentifier: string;
+  }
+
+  /**
+   * Capturable display information
+   */
+  export interface DisplayInfo {
+    displayId: number;
+    frame: Rect;
+    width: number;
+    height: number;
+    isMainDisplay: boolean;
+  }
+
+  /**
    * Audio sample data from the native addon
    */
   export interface AudioSample {
@@ -152,12 +188,32 @@ declare module 'screencapturekit-audio-addon' {
     getAvailableApps(): AppInfo[];
 
     /**
+     * Get list of capturable windows
+     */
+    getAvailableWindows(): WindowInfo[];
+
+    /**
+     * Get list of displays that can be captured
+     */
+    getAvailableDisplays(): DisplayInfo[];
+
+    /**
      * Start capturing audio from a specific application
      * @param processId - Process ID of the target application
      * @param callback - Callback function invoked for each audio sample
      * @returns true if capture started successfully, false otherwise
      */
-    startCapture(processId: number, callback: AudioCallback): boolean;
+    startCapture(processId: number, config: Partial<CaptureOptions>, callback: AudioCallback): boolean;
+
+    /**
+     * Start capturing audio from a window
+     */
+    startCaptureForWindow(windowId: number, config: Partial<CaptureOptions>, callback: AudioCallback): boolean;
+
+    /**
+     * Start capturing audio from a display
+     */
+    startCaptureForDisplay(displayId: number, config: Partial<CaptureOptions>, callback: AudioCallback): boolean;
 
     /**
      * Stop the current audio capture session
@@ -175,10 +231,16 @@ declare module 'screencapturekit-audio-addon' {
    * Current capture information
    */
   export interface CaptureInfo {
-    /** Process ID being captured */
-    processId: number;
-    /** Application info (may be null if app terminated) */
+    /** Process ID being captured (may be null for display capture) */
+    processId: number | null;
+    /** Application info (may be null if not applicable) */
     app: AppInfo | null;
+    /** Window info when capturing a window */
+    window: WindowInfo | null;
+    /** Display info when capturing a display */
+    display: DisplayInfo | null;
+    /** Capture target type */
+    targetType: 'application' | 'window' | 'display';
   }
 
   /**
@@ -261,9 +323,26 @@ declare module 'screencapturekit-audio-addon' {
 
     /**
      * Get all available applications that can be captured
+     * @param options - Filter options
+     * @param options.includeEmpty - Include apps with empty applicationName (default: false)
      * @returns Array of application information
      */
-    getApplications(): AppInfo[];
+    getApplications(options?: { includeEmpty?: boolean }): AppInfo[];
+
+    /**
+     * Get captureable windows from ScreenCaptureKit
+     * @param options - Filter options
+     */
+    getWindows(options?: {
+      onScreenOnly?: boolean;
+      requireTitle?: boolean;
+      processId?: number;
+    }): WindowInfo[];
+
+    /**
+     * Get displays that can be captured
+     */
+    getDisplays(): DisplayInfo[];
 
     /**
      * Find an application by name or bundle identifier
@@ -284,9 +363,15 @@ declare module 'screencapturekit-audio-addon' {
      * Filters out system apps and utilities that typically don't have audio
      * @param options - Filter options
      * @param options.includeSystemApps - If true, returns all apps (same as getApplications())
+     * @param options.includeEmpty - Include apps with empty applicationName (default: false)
+     * @param options.sortByActivity - Sort by recent audio activity (requires enableActivityTracking())
      * @returns Array of application information
      */
-    getAudioApps(options?: { includeSystemApps?: boolean }): AppInfo[];
+    getAudioApps(options?: {
+      includeSystemApps?: boolean;
+      includeEmpty?: boolean;
+      sortByActivity?: boolean;
+    }): AppInfo[];
 
     /**
      * Get application information by process ID
@@ -313,6 +398,41 @@ declare module 'screencapturekit-audio-addon' {
      * const app = capture.selectApp('Spotify', { throwOnNotFound: true });
      */
     selectApp(identifiers?: string | number | (string | number)[] | null, options?: SelectAppOptions): AppInfo | null;
+
+    /**
+     * Enable background tracking of audio activity
+     * Tracks which apps are producing audio for smarter filtering and sorting
+     * @param options - Tracking options
+     * @param options.decayMs - Remove apps from cache after this many ms of inactivity (default: 30000)
+     * @example
+     * capture.enableActivityTracking();
+     *
+     * // Later, get apps sorted by recent activity
+     * const apps = capture.getAudioApps({ sortByActivity: true });
+     * // Apps that recently produced audio appear first
+     */
+    enableActivityTracking(options?: { decayMs?: number }): void;
+
+    /**
+     * Disable activity tracking and clear the cache
+     */
+    disableActivityTracking(): void;
+
+    /**
+     * Get activity tracking status and statistics
+     * @returns Activity tracking info with enabled status, tracked apps count, and recent apps list
+     */
+    getActivityInfo(): {
+      enabled: boolean;
+      trackedApps: number;
+      recentApps: Array<{
+        processId: number;
+        lastSeen: number;
+        ageMs: number;
+        avgRMS: number;
+        sampleCount: number;
+      }>;
+    };
 
     /**
      * Verify screen recording permissions
@@ -343,8 +463,11 @@ declare module 'screencapturekit-audio-addon' {
      */
     getStatus(): {
       capturing: boolean;
-      processId: number;
-      app: AppInfo;
+      processId: number | null;
+      app: AppInfo | null;
+      window: WindowInfo | null;
+      display: DisplayInfo | null;
+      targetType: 'application' | 'window' | 'display';
       config: {
         minVolume: number;
         format: 'float32' | 'int16';
@@ -376,6 +499,20 @@ declare module 'screencapturekit-audio-addon' {
      * }
      */
     startCapture(appIdentifier: string | number, options?: CaptureOptions): boolean;
+
+    /**
+     * Start capturing audio from a specific window
+     * @param windowId - Window identifier returned by getWindows()
+     * @param options - Capture options
+     */
+    captureWindow(windowId: number, options?: CaptureOptions): boolean;
+
+    /**
+     * Start capturing audio from a display
+     * @param displayId - Display identifier returned by getDisplays()
+     * @param options - Capture options
+     */
+    captureDisplay(displayId: number, options?: CaptureOptions): boolean;
 
     /**
      * Stop the current capture session
@@ -479,17 +616,17 @@ declare module 'screencapturekit-audio-addon' {
     // Event emitter methods
     on(event: 'start', listener: (info: CaptureInfo) => void): this;
     on(event: 'audio', listener: (sample: EnhancedAudioSample) => void): this;
-    on(event: 'stop', listener: (info: { processId: number }) => void): this;
+    on(event: 'stop', listener: (info: CaptureInfo) => void): this;
     on(event: 'error', listener: (error: AudioCaptureError) => void): this;
 
     once(event: 'start', listener: (info: CaptureInfo) => void): this;
     once(event: 'audio', listener: (sample: EnhancedAudioSample) => void): this;
-    once(event: 'stop', listener: (info: { processId: number }) => void): this;
+    once(event: 'stop', listener: (info: CaptureInfo) => void): this;
     once(event: 'error', listener: (error: AudioCaptureError) => void): this;
 
     emit(event: 'start', info: CaptureInfo): boolean;
     emit(event: 'audio', sample: EnhancedAudioSample): boolean;
-    emit(event: 'stop', info: { processId: number }): boolean;
+    emit(event: 'stop', info: CaptureInfo): boolean;
     emit(event: 'error', error: AudioCaptureError): boolean;
   }
 
