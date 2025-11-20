@@ -9,8 +9,12 @@
     "build": "node-gyp rebuild",
     "rebuild": "node-gyp rebuild",
     "clean": "node-gyp clean",
-    "test": "node --test tests/examples.test.js",
-    "test:integration": "node test.js",
+    "test": "node --test 'tests/**/*.test.js'",
+    "test:unit": "node --test 'tests/unit/*.test.js'",
+    "test:integration": "node --test 'tests/integration/*.test.js'",
+    "test:examples": "node --test 'tests/examples/*.test.js'",
+    "test:edge-cases": "node --test 'tests/edge-cases/*.test.js'",
+    "test:watch": "node --test --watch 'tests/**/*.test.js'",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
