@@ -7,6 +7,7 @@
  * - Piping to transforms and writable streams
  * - Using pipeline() for error handling
  * - Real-time WAV file streaming
+ * - createSTTStream() helper for Speech-to-Text engines
  */
 
 const AudioCapture = require('../sdk');
@@ -18,20 +19,21 @@ const capture = new AudioCapture();
 console.log('=== ScreenCaptureKit Audio Capture - Stream API ===\n');
 
 // Find an app
-const APP_NAME = 'Spotify'; // Change this to an app running on your system
-const app = capture.findApplication(APP_NAME);
+const app = capture.selectApp(['Spotify', 'Music', 'Safari', 'Chrome', 'Firefox', 'VLC']);
 
 if (!app) {
-  console.error(`❌ Application "${APP_NAME}" not found.`);
+  console.error('❌ No audio-capable applications were found.');
+  console.log('Run "node 4-finding-apps.js" to see what is available.');
   process.exit(1);
 }
 
-console.log(`✓ Found: ${app.applicationName}\n`);
+console.log(`✓ Found: ${app.applicationName} (PID: ${app.processId})\n`);
 console.log('Choose an example to run:\n');
 console.log('  1 - Object Mode: Stream with metadata');
 console.log('  2 - Normal Mode: Raw audio data piping');
 console.log('  3 - Pipeline: Save to WAV file with error handling');
-console.log('  4 - Transform: Real-time audio processing\n');
+console.log('  4 - Transform: Real-time volume meter');
+console.log('  5 - STT Stream: Int16 mono pipeline\n');
 
 const example = process.argv[2] || '1';
 
@@ -48,8 +50,11 @@ switch (example) {
   case '4':
     exampleTransform();
     break;
+  case '5':
+    exampleSTT();
+    break;
   default:
-    console.log('Usage: node 2-stream-api.js [1-4]');
+    console.log('Usage: node 2-stream-api.js [1-5]');
     process.exit(0);
 }
 
@@ -178,12 +183,9 @@ function examplePipeline() {
         // Create WAV file from collected chunks
         const combinedBuffer = Buffer.concat(chunks);
 
-        // Get capture info to know the audio format
-        const captureInfo = audioStream.getCurrentCapture();
-
         const wavBuffer = AudioCapture.writeWav(combinedBuffer, {
-          sampleRate: 48000,  // Default system rate
-          channels: 2,        // Default stereo
+          sampleRate: 48000,
+          channels: 2,
           format: 'float32'
         });
 
@@ -251,6 +253,49 @@ function exampleTransform() {
   }, 5000);
 
   handleSigint(audioStream);
+}
+
+// Example 5: STT helper stream
+function exampleSTT() {
+  console.log('Running: STT Stream Example (auto Int16 mono)\n');
+
+  const sttStream = capture.createSTTStream(app.applicationName, {
+    minVolume: 0.02,
+    channels: 1,
+    format: 'int16',
+    objectMode: true,
+    autoSelect: true
+  });
+
+  console.log(`Selected app: ${sttStream.app?.applicationName || 'unknown'}`);
+
+  let chunkCount = 0;
+  sttStream.on('data', (sample) => {
+    chunkCount++;
+    if (chunkCount % 20 === 0) {
+      console.log(`Chunk #${chunkCount}: format=${sample.format}, channels=${sample.channels}`);
+    }
+  });
+
+  sttStream.on('end', () => {
+    console.log(`\n✓ STT stream ended after ${chunkCount} chunks`);
+    process.exit(0);
+  });
+
+  sttStream.on('error', (err) => {
+    console.error(`❌ STT stream error: ${err.message}`);
+    process.exit(1);
+  });
+
+  setTimeout(() => {
+    console.log('\n⏱  5 seconds elapsed, stopping STT stream...\n');
+    sttStream.stop();
+  }, 5000);
+
+  process.on('SIGINT', () => {
+    console.log('\n\n⚠  Interrupted by user');
+    sttStream.stop();
+  });
 }
 
 // Helper: Handle Ctrl+C

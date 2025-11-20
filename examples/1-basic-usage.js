@@ -1,38 +1,51 @@
 /**
  * Basic Usage - Event-Based API
  *
- * This example demonstrates the core functionality:
- * - Starting and stopping capture
- * - Receiving audio samples
- * - Volume threshold filtering
- * - Working with audio buffers
- * - Saving to WAV files
+ * Best practices demonstrated here:
+ * - Verifying Screen Recording permission
+ * - Smart app selection with fallbacks
+ * - Activity tracking for audio apps
+ * - Accessing capture status metadata
+ * - Saving buffers to WAV on stop
  */
 
 const AudioCapture = require('../sdk');
 const fs = require('fs');
 
-const capture = new AudioCapture();
-
 console.log('=== ScreenCaptureKit Audio Capture - Basic Usage ===\n');
 
-// Find an app to capture (you can replace 'Spotify' with any app name)
-const APP_NAME = 'Spotify'; // Change this to an app running on your system
-const app = capture.findApplication(APP_NAME);
+// 1) Verify permissions up front so we can provide actionable guidance
+const permissionStatus = AudioCapture.verifyPermissions();
+console.log(`Permission check: ${permissionStatus.message}`);
+if (!permissionStatus.granted) {
+  console.error('\nGrant Screen Recording permission and re-run this example.');
+  if (permissionStatus.remediation) {
+    console.error(permissionStatus.remediation);
+  }
+  process.exit(1);
+}
 
-if (!app) {
-  console.error(`❌ Application "${APP_NAME}" not found.`);
+const capture = new AudioCapture();
+capture.enableActivityTracking({ decayMs: 60_000 });
+
+// 2) Smart target selection
+const cliIdentifiers = process.argv.slice(2).filter(Boolean);
+const defaultCandidates = cliIdentifiers.length > 0
+  ? cliIdentifiers
+  : ['Spotify', 'Music', 'Safari', 'Chrome', 'Firefox', 'VLC'];
+
+const targetApp = capture.selectApp(defaultCandidates, { audioOnly: true });
+
+if (!targetApp) {
+  console.error('❌ No audio-capable applications were found.');
   console.log('\nAvailable applications:');
-  const apps = capture.getApplications();
-  apps.slice(0, 10).forEach(a => {
-    console.log(`  • ${a.applicationName}`);
+  capture.getApplications().slice(0, 10).forEach(app => {
+    console.log(`  • ${app.applicationName}`);
   });
   process.exit(1);
 }
 
-console.log(`✓ Found: ${app.applicationName} (PID: ${app.processId})\n`);
-
-// Example 1: Basic audio capture with statistics
+console.log(`Targeting ${targetApp.applicationName} (PID ${targetApp.processId})`);
 console.log('Starting capture with volume threshold...\n');
 
 let sampleCount = 0;
@@ -40,8 +53,8 @@ let totalDuration = 0;
 const audioChunks = [];
 
 capture.on('start', (info) => {
-  console.log(`✓ Capture started (PID: ${info.processId})`);
-  console.log(`  Press Ctrl+C to stop\n`);
+  console.log(`✓ Capture started (${info.targetType})`);
+  logStatusSnapshot('Current status', capture.getStatus());
 });
 
 capture.on('audio', (sample) => {
@@ -55,14 +68,10 @@ capture.on('audio', (sample) => {
   const rmsDb = AudioCapture.rmsToDb(sample.rms);
   const peakDb = AudioCapture.peakToDb(sample.peak);
 
-  // Log every 50th sample
   if (sampleCount % 50 === 0) {
     console.log(`Sample #${sampleCount}:`);
-    console.log(`  Format: ${sample.format}`);
-    console.log(`  Sample Rate: ${sample.sampleRate} Hz`);
-    console.log(`  Channels: ${sample.channels}`);
-    console.log(`  Samples: ${float32.length} (${sample.framesCount} frames)`);
-    console.log(`  Duration: ${sample.durationMs.toFixed(2)} ms`);
+    console.log(`  ${sample.sampleRate}Hz, ${sample.channels}ch, ${sample.format}`);
+    console.log(`  Frames: ${sample.framesCount}, Duration: ${sample.durationMs.toFixed(2)}ms`);
     console.log(`  RMS: ${sample.rms.toFixed(4)} (${rmsDb.toFixed(1)} dB)`);
     console.log(`  Peak: ${sample.peak.toFixed(4)} (${peakDb.toFixed(1)} dB)`);
     console.log();
@@ -82,27 +91,24 @@ capture.on('audio', (sample) => {
 capture.on('stop', () => {
   console.log(`\n✓ Capture stopped`);
   console.log(`  Total samples: ${sampleCount}`);
-  console.log(`  Total duration: ${(totalDuration / 1000).toFixed(2)}s\n`);
+  console.log(`  Total duration: ${(totalDuration / 1000).toFixed(2)}s`);
+  logStatusSnapshot('Final status', capture.getStatus());
 
-  // Save captured audio to WAV file
+  const activity = capture.getActivityInfo();
+  console.log(`Tracked apps: ${activity.trackedApps} (activity tracking ${activity.enabled ? 'enabled' : 'disabled'})\n`);
+
   if (audioChunks.length > 0) {
     console.log('Saving to WAV file...');
 
-    // Concatenate all audio chunks
-    const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.data.length, 0);
     const combinedBuffer = Buffer.concat(audioChunks.map(c => c.data));
-
-    // Use the first chunk's metadata (all should be the same)
     const { sampleRate, channels, format } = audioChunks[0];
 
-    // Create WAV file
     const wavBuffer = AudioCapture.writeWav(combinedBuffer, {
       sampleRate,
       channels,
       format
     });
 
-    // Write to disk
     const filename = `capture-${Date.now()}.wav`;
     fs.writeFileSync(filename, wavBuffer);
 
@@ -123,13 +129,13 @@ capture.on('error', (error) => {
 });
 
 // Start capture with options
-capture.startCapture(app.applicationName, {
-  minVolume: 0.01,    // Only emit when volume > 0.01 (filters silence)
-  format: 'float32'   // Use Float32 format (default)
+capture.startCapture(targetApp.applicationName, {
+  minVolume: 0.01,    // Filter silence
+  format: 'float32'
 });
 
 // Stop after 5 seconds
-setTimeout(() => {
+const stopTimer = setTimeout(() => {
   console.log('\n⏱  5 seconds elapsed, stopping capture...');
   capture.stopCapture();
 }, 5000);
@@ -137,9 +143,25 @@ setTimeout(() => {
 // Handle Ctrl+C gracefully
 process.on('SIGINT', () => {
   console.log('\n\n⚠  Interrupted by user');
+  clearTimeout(stopTimer);
   if (capture.isCapturing()) {
     capture.stopCapture();
   } else {
     process.exit(0);
   }
 });
+
+function logStatusSnapshot(label, status) {
+  if (!status) {
+    console.log(`${label}: not capturing`);
+    return;
+  }
+
+  console.log(`${label}:`);
+  console.log(`  Target Type: ${status.targetType}`);
+  if (status.app) {
+    console.log(`  App: ${status.app.applicationName} (${status.processId || 'n/a'})`);
+  }
+  console.log(`  Format: ${status.config.format}, Min Volume: ${status.config.minVolume}`);
+  console.log();
+}

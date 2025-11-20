@@ -13,17 +13,20 @@ node examples/1-basic-usage.js
 
 ### 1. Basic Usage (`1-basic-usage.js`)
 **What it covers:**
-- Starting and stopping audio capture
-- Receiving audio samples via events
+- Permission verification and best-practice error handling
+- Smart app selection with fallbacks
+- Starting/stopping capture via events
 - Volume threshold filtering
 - Working with audio buffers (Buffer → Float32Array)
 - Calculating RMS/Peak/dB levels
 - Saving captured audio to WAV files
+- Activity tracking snapshot
 
 **Use this when:** You're getting started or want to use the event-based API.
 
 ```bash
-node examples/1-basic-usage.js
+node examples/1-basic-usage.js               # Auto-selects a running audio app
+node examples/1-basic-usage.js "Spotify"     # Force a specific app (case-insensitive)
 ```
 
 ---
@@ -36,6 +39,7 @@ node examples/1-basic-usage.js
 - Using `pipeline()` for error handling
 - Real-time audio processing with transforms
 - Live volume meter example
+- `createSTTStream()` helper for Speech-to-Text engines
 
 **Use this when:** You want composable, stream-based audio processing.
 
@@ -45,6 +49,7 @@ node examples/2-stream-api.js 1  # Object mode with metadata
 node examples/2-stream-api.js 2  # Normal mode (raw buffers)
 node examples/2-stream-api.js 3  # Pipeline with WAV file
 node examples/2-stream-api.js 4  # Real-time volume meter
+node examples/2-stream-api.js 5  # STT-ready Int16 mono stream
 ```
 
 ---
@@ -56,43 +61,60 @@ node examples/2-stream-api.js 4  # Real-time volume meter
 - Buffer size control (latency vs CPU trade-off)
 - Format selection (float32 vs int16)
 - Data reduction strategies
+- Application/window/display targeting
 - Configuration presets
 
 **Use this when:** You need to optimize for latency, bandwidth, or CPU usage.
 
 **Configuration presets:**
 ```bash
-node examples/3-advanced-config.js 1  # Low latency
-node examples/3-advanced-config.js 2  # Efficient (75% data reduction)
-node examples/3-advanced-config.js 3  # High quality
-node examples/3-advanced-config.js 4  # Custom settings
+node examples/3-advanced-config.js 1              # Low latency
+node examples/3-advanced-config.js 2 display      # Efficient, display capture
+node examples/3-advanced-config.js 3 window       # High quality, window capture
+node examples/3-advanced-config.js 4 app ...      # Custom settings
 ```
 
 **Custom settings:**
 ```bash
-node examples/3-advanced-config.js 4 48000 1 2048 int16
-#                                    │ │     │ │     └─ format
-#                                    │ │     │ └─ buffer size
-#                                    │ │     └─ channels
-#                                    │ └─ sample rate
-#                                    └─ preset #4 (custom)
+node examples/3-advanced-config.js 4 app 48000 1 2048 int16
+#                                             │  │  │  └─ format
+#                                             │  │  └─ buffer size
+#                                             │  └─ channels
+#                                             └─ sample rate
 ```
 
 ---
 
 ### 4. Finding Applications (`4-finding-apps.js`)
 **What it covers:**
-- Getting all capturable applications
-- Filtering to audio-likely apps
-- Searching by name (case-insensitive, partial match)
-- Searching by bundle ID
-- Looking up by process ID
+- Permission verification / troubleshooting
+- Getting all capturable applications (including helper processes)
+- Filtering to audio-likely apps, sorting by activity
+- Searching by name, bundle ID, and PID lookup
+- Smart selection with `selectApp()`
+- Activity tracking statistics
 - Custom filtering strategies
 
 **Use this when:** You need to discover or filter available applications.
 
 ```bash
 node examples/4-finding-apps.js
+```
+
+---
+
+### 5. STT Integration (`5-stt-integration.js`)
+**What it covers:**
+- Dedicated Speech-to-Text integration pipeline
+- `createSTTStream()` helper usage
+- Automatic format conversion (Float32 → Int16)
+- Automatic channel downmixing (Stereo → Mono)
+- Simulating data streaming to an external service
+
+**Use this when:** You want to feed audio into a speech recognition engine (Deepgram, Whisper, Google Speech, etc.).
+
+```bash
+node examples/5-stt-integration.js
 ```
 
 ---

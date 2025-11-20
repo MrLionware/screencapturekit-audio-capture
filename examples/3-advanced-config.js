@@ -12,25 +12,22 @@ const AudioCapture = require('../sdk');
 
 const capture = new AudioCapture();
 
-console.log('=== Advanced Configuration Options ===\n');
+console.log('=== Advanced Configuration & Targeting ===\n');
+console.log('Choose a configuration preset and optional target:\n');
+console.log('  Presets:');
+console.log('    1 - Low Latency: Small buffers, stereo, float32');
+console.log('    2 - Efficient: Mono, int16, larger buffers (75% less data)');
+console.log('    3 - High Quality: Stereo, float32, balanced buffer');
+console.log('    4 - Custom: Specify your own settings');
+console.log('\nOptional target argument (default: app): app | window | display');
+console.log('Usage: node 3-advanced-config.js [preset] [target] [...custom args]\n');
 
-// Find an app
-const APP_NAME = 'Spotify'; // Change this to an app running on your system
-const app = capture.findApplication(APP_NAME);
-
-if (!app) {
-  console.error(`❌ Application "${APP_NAME}" not found.`);
-  process.exit(1);
-}
-
-console.log(`✓ Found: ${app.applicationName}\n`);
-console.log('Choose a configuration preset:\n');
-console.log('  1 - Low Latency: Small buffers, stereo, float32');
-console.log('  2 - Efficient: Mono, int16, larger buffers (75% less data)');
-console.log('  3 - High Quality: Stereo, float32, balanced buffer');
-console.log('  4 - Custom: Specify your own settings\n');
-
-const preset = process.argv[2] || '1';
+const args = process.argv.slice(2);
+const preset = args[0] || '1';
+const possibleTarget = (args[1] || '').toLowerCase();
+const targetMode = ['window', 'display', 'app'].includes(possibleTarget) ? possibleTarget : 'app';
+const customArgsStart = ['window', 'display', 'app'].includes(possibleTarget) ? 2 : 1;
+const customArgs = args.slice(customArgsStart);
 
 let config;
 
@@ -71,23 +68,30 @@ switch (preset) {
   case '4':
     console.log('Using: Custom Configuration\n');
     config = {
-      sampleRate: parseInt(process.argv[3]) || 48000,
-      channels: parseInt(process.argv[4]) || 2,
-      bufferSize: parseInt(process.argv[5]) || 2048,
-      format: process.argv[6] || 'float32',
+      sampleRate: parseInt(customArgs[0]) || 48000,
+      channels: parseInt(customArgs[1]) || 2,
+      bufferSize: parseInt(customArgs[2]) || 2048,
+      format: customArgs[3] || 'float32',
       minVolume: 0.01
     };
     console.log(`Custom settings: ${config.sampleRate}Hz, ${config.channels}ch, buffer=${config.bufferSize}, ${config.format}\n`);
     break;
 
   default:
-    console.log('Usage: node 3-advanced-config.js [1-4] [sampleRate] [channels] [bufferSize] [format]');
-    console.log('Example: node 3-advanced-config.js 4 48000 1 2048 int16');
+    console.log('Usage: node 3-advanced-config.js [1-4] [target]');
     process.exit(0);
 }
 
-// Display configuration
-console.log('Configuration:');
+const selectedApp = capture.selectApp(['Spotify', 'Music', 'Safari', 'Chrome']);
+if (!selectedApp) {
+  console.error('❌ No capturable applications found.');
+  process.exit(1);
+}
+
+console.log(`Target preference: ${targetMode}`);
+const target = resolveTarget(targetMode, selectedApp);
+
+console.log('\nConfiguration:');
 console.log(`  Sample Rate: ${config.sampleRate} Hz (requested)`);
 console.log(`  Channels: ${config.channels} (${config.channels === 1 ? 'mono' : 'stereo'})`);
 console.log(`  Buffer Size: ${config.bufferSize} frames`);
@@ -97,6 +101,18 @@ console.log();
 
 let sampleCount = 0;
 const durations = [];
+
+capture.on('start', (info) => {
+  console.log(`✓ Capture started (target: ${info.targetType})`);
+  if (info.window) {
+    console.log(`  Window: ${info.window.title}`);
+  } else if (info.display) {
+    console.log(`  Display ID: ${info.display.displayId}`);
+  } else {
+    console.log(`  App: ${info.app?.applicationName}`);
+  }
+  logStatus('Status snapshot', capture.getStatus());
+});
 
 capture.on('audio', (sample) => {
   sampleCount++;
@@ -150,6 +166,7 @@ capture.on('audio', (sample) => {
 
 capture.on('stop', () => {
   console.log(`\n✓ Capture stopped. Total samples: ${sampleCount}\n`);
+  logStatus('Final status', capture.getStatus());
   process.exit(0);
 });
 
@@ -160,7 +177,7 @@ capture.on('error', (err) => {
 
 // Start capture
 console.log('Starting capture...\n');
-capture.startCapture(app.applicationName, config);
+startTargetCapture(target, config);
 
 // Stop after 5 seconds
 setTimeout(() => {
@@ -177,3 +194,61 @@ process.on('SIGINT', () => {
     process.exit(0);
   }
 });
+
+function resolveTarget(mode, fallbackApp) {
+  if (mode === 'window') {
+    const windows = capture.getWindows({ onScreenOnly: true, requireTitle: true });
+    if (windows.length > 0) {
+      console.log(`Using window #${windows[0].windowId}: ${windows[0].title}`);
+      return { type: 'window', window: windows[0] };
+    }
+    console.log('⚠ No capturable windows found. Falling back to application mode.');
+  }
+
+  if (mode === 'display') {
+    const displays = capture.getDisplays();
+    if (displays.length > 0) {
+      console.log(`Using display #${displays[0].displayId} (${displays[0].width}x${displays[0].height})`);
+      return { type: 'display', display: displays[0] };
+    }
+    console.log('⚠ No displays found via ScreenCaptureKit. Falling back to application mode.');
+  }
+
+  console.log(`Using application: ${fallbackApp.applicationName}`);
+  return { type: 'app', app: fallbackApp };
+}
+
+function startTargetCapture(target, captureConfig) {
+  switch (target.type) {
+    case 'window':
+      capture.captureWindow(target.window.windowId, captureConfig);
+      break;
+    case 'display':
+      capture.captureDisplay(target.display.displayId, captureConfig);
+      break;
+    default:
+      capture.startCapture(target.app.applicationName, captureConfig);
+      break;
+  }
+}
+
+function logStatus(label, status) {
+  if (!status) {
+    console.log(`${label}: not capturing`);
+    return;
+  }
+
+  console.log(`${label}:`);
+  console.log(`  Target Type: ${status.targetType}`);
+  if (status.app) {
+    console.log(`  App: ${status.app.applicationName}`);
+  }
+  if (status.window) {
+    console.log(`  Window: ${status.window.title}`);
+  }
+  if (status.display) {
+    console.log(`  Display ID: ${status.display.displayId}`);
+  }
+  console.log(`  Format: ${status.config.format} / Min Volume ${status.config.minVolume}`);
+  console.log();
+}
