@@ -5,6 +5,19 @@
 
 using namespace screencapturekit;
 
+namespace {
+
+Napi::Object RectToJSObject(Napi::Env env, const Rect& rect) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("x", Napi::Number::New(env, rect.x));
+    obj.Set("y", Napi::Number::New(env, rect.y));
+    obj.Set("width", Napi::Number::New(env, rect.width));
+    obj.Set("height", Napi::Number::New(env, rect.height));
+    return obj;
+}
+
+}
+
 // Class to wrap the ScreenCaptureKit functionality
 class ScreenCaptureAddon : public Napi::ObjectWrap<ScreenCaptureAddon> {
 public:
@@ -16,9 +29,17 @@ private:
     static Napi::FunctionReference constructor;
 
     Napi::Value GetAvailableApps(const Napi::CallbackInfo& info);
+    Napi::Value GetAvailableWindows(const Napi::CallbackInfo& info);
+    Napi::Value GetAvailableDisplays(const Napi::CallbackInfo& info);
     Napi::Value StartCapture(const Napi::CallbackInfo& info);
+    Napi::Value StartCaptureForWindow(const Napi::CallbackInfo& info);
+    Napi::Value StartCaptureForDisplay(const Napi::CallbackInfo& info);
     Napi::Value StopCapture(const Napi::CallbackInfo& info);
     Napi::Value IsCapturing(const Napi::CallbackInfo& info);
+
+    using NativeStartFunction = std::function<bool(const CaptureConfig&, const std::function<void(const AudioSample&)>&)>;
+    Napi::Value StartCaptureWithConfig(const Napi::CallbackInfo& info, const NativeStartFunction& starter);
+    static CaptureConfig ParseCaptureConfig(Napi::Env env, const Napi::Object& configObj);
 
     std::unique_ptr<ScreenCaptureKitWrapper> wrapper_;
     Napi::ThreadSafeFunction tsfn_;
@@ -29,7 +50,11 @@ Napi::FunctionReference ScreenCaptureAddon::constructor;
 Napi::Object ScreenCaptureAddon::Init(Napi::Env env, Napi::Object exports) {
     Napi::Function func = DefineClass(env, "ScreenCaptureKit", {
         InstanceMethod("getAvailableApps", &ScreenCaptureAddon::GetAvailableApps),
+        InstanceMethod("getAvailableWindows", &ScreenCaptureAddon::GetAvailableWindows),
+        InstanceMethod("getAvailableDisplays", &ScreenCaptureAddon::GetAvailableDisplays),
         InstanceMethod("startCapture", &ScreenCaptureAddon::StartCapture),
+        InstanceMethod("startCaptureForWindow", &ScreenCaptureAddon::StartCaptureForWindow),
+        InstanceMethod("startCaptureForDisplay", &ScreenCaptureAddon::StartCaptureForDisplay),
         InstanceMethod("stopCapture", &ScreenCaptureAddon::StopCapture),
         InstanceMethod("isCapturing", &ScreenCaptureAddon::IsCapturing),
     });
@@ -79,16 +104,101 @@ Napi::Value ScreenCaptureAddon::GetAvailableApps(const Napi::CallbackInfo& info)
     return result;
 }
 
-Napi::Value ScreenCaptureAddon::StartCapture(const Napi::CallbackInfo& info) {
+Napi::Value ScreenCaptureAddon::GetAvailableWindows(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
 
-    if (info.Length() < 3) {
-        Napi::TypeError::New(env, "Expected 3 arguments: processId, config, and callback").ThrowAsJavaScriptException();
+    if (!wrapper_) {
+        Napi::Error::New(env, "Wrapper not initialized").ThrowAsJavaScriptException();
         return env.Null();
     }
 
-    if (!info[0].IsNumber()) {
-        Napi::TypeError::New(env, "First argument must be a number (processId)").ThrowAsJavaScriptException();
+    std::vector<WindowInfo> windows = wrapper_->getAvailableWindows();
+    Napi::Array result = Napi::Array::New(env, windows.size());
+
+    for (size_t i = 0; i < windows.size(); i++) {
+        const WindowInfo& window = windows[i];
+        Napi::Object windowObj = Napi::Object::New(env);
+        windowObj.Set("windowId", Napi::Number::New(env, static_cast<double>(window.windowId)));
+        windowObj.Set("layer", Napi::Number::New(env, window.layer));
+        windowObj.Set("frame", RectToJSObject(env, window.frame));
+        windowObj.Set("onScreen", Napi::Boolean::New(env, window.onScreen));
+        windowObj.Set("active", Napi::Boolean::New(env, window.active));
+        windowObj.Set("title", Napi::String::New(env, window.title));
+        windowObj.Set("owningProcessId", Napi::Number::New(env, window.owningProcessId));
+        windowObj.Set("owningApplicationName", Napi::String::New(env, window.owningApplicationName));
+        windowObj.Set("owningBundleIdentifier", Napi::String::New(env, window.owningBundleIdentifier));
+        result[i] = windowObj;
+    }
+
+    return result;
+}
+
+Napi::Value ScreenCaptureAddon::GetAvailableDisplays(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (!wrapper_) {
+        Napi::Error::New(env, "Wrapper not initialized").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    std::vector<DisplayInfo> displays = wrapper_->getAvailableDisplays();
+    Napi::Array result = Napi::Array::New(env, displays.size());
+
+    for (size_t i = 0; i < displays.size(); i++) {
+        const DisplayInfo& display = displays[i];
+        Napi::Object displayObj = Napi::Object::New(env);
+        displayObj.Set("displayId", Napi::Number::New(env, display.displayId));
+        displayObj.Set("frame", RectToJSObject(env, display.frame));
+        displayObj.Set("width", Napi::Number::New(env, display.width));
+        displayObj.Set("height", Napi::Number::New(env, display.height));
+        displayObj.Set("isMainDisplay", Napi::Boolean::New(env, display.isMainDisplay));
+        result[i] = displayObj;
+    }
+
+    return result;
+}
+
+CaptureConfig ScreenCaptureAddon::ParseCaptureConfig(Napi::Env env, const Napi::Object& configObj) {
+    CaptureConfig config;
+
+    if (configObj.Has("sampleRate")) {
+        Napi::Value val = configObj.Get("sampleRate");
+        if (val.IsNumber()) {
+            config.sampleRate = val.As<Napi::Number>().Int32Value();
+        }
+    }
+    if (configObj.Has("channels")) {
+        Napi::Value val = configObj.Get("channels");
+        if (val.IsNumber()) {
+            config.channels = val.As<Napi::Number>().Int32Value();
+        }
+    }
+    if (configObj.Has("bufferSize")) {
+        Napi::Value bufferSizeVal = configObj.Get("bufferSize");
+        if (!bufferSizeVal.IsUndefined() && bufferSizeVal.IsNumber()) {
+            config.bufferSize = bufferSizeVal.As<Napi::Number>().Int32Value();
+        }
+    }
+    if (configObj.Has("excludeCursor")) {
+        Napi::Value val = configObj.Get("excludeCursor");
+        if (val.IsBoolean()) {
+            config.excludeCursor = val.As<Napi::Boolean>().Value();
+        }
+    }
+
+    return config;
+}
+
+Napi::Value ScreenCaptureAddon::StartCaptureWithConfig(const Napi::CallbackInfo& info, const NativeStartFunction& starter) {
+    Napi::Env env = info.Env();
+
+    if (!wrapper_) {
+        Napi::Error::New(env, "Wrapper not initialized").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    if (info.Length() < 3) {
+        Napi::TypeError::New(env, "Expected 3 arguments: targetId, config, and callback").ThrowAsJavaScriptException();
         return env.Null();
     }
 
@@ -102,29 +212,10 @@ Napi::Value ScreenCaptureAddon::StartCapture(const Napi::CallbackInfo& info) {
         return env.Null();
     }
 
-    int processId = info[0].As<Napi::Number>().Int32Value();
     Napi::Object configObj = info[1].As<Napi::Object>();
+    CaptureConfig config = ParseCaptureConfig(env, configObj);
     Napi::Function callback = info[2].As<Napi::Function>();
 
-    // Parse configuration options
-    CaptureConfig config;
-    if (configObj.Has("sampleRate")) {
-        config.sampleRate = configObj.Get("sampleRate").As<Napi::Number>().Int32Value();
-    }
-    if (configObj.Has("channels")) {
-        config.channels = configObj.Get("channels").As<Napi::Number>().Int32Value();
-    }
-    if (configObj.Has("bufferSize")) {
-        Napi::Value bufferSizeVal = configObj.Get("bufferSize");
-        if (!bufferSizeVal.IsUndefined()) {
-            config.bufferSize = bufferSizeVal.As<Napi::Number>().Int32Value();
-        }
-    }
-    if (configObj.Has("excludeCursor")) {
-        config.excludeCursor = configObj.Get("excludeCursor").As<Napi::Boolean>().Value();
-    }
-
-    // Create thread-safe function for callback
     if (tsfn_) {
         tsfn_.Release();
     }
@@ -133,21 +224,18 @@ Napi::Value ScreenCaptureAddon::StartCapture(const Napi::CallbackInfo& info) {
         env,
         callback,
         "AudioCallback",
-        0,      // Unlimited queue
-        1,      // Only one thread will use this
-        [](Napi::Env) {}  // Finalizer
+        0,
+        1,
+        [](Napi::Env) {}
     );
 
-    // Start capture with callback
-    bool success = wrapper_->startCapture(processId, config, [this](const AudioSample& sample) {
-        // Call JavaScript callback from worker thread
+    auto nativeCallback = [this](const AudioSample& sample) {
         auto callback = [sample](Napi::Env env, Napi::Function jsCallback) {
             Napi::HandleScope scope(env);
 
             try {
                 Napi::Object sampleObj = Napi::Object::New(env);
 
-                // Convert audio data to Buffer
                 Napi::Buffer<float> buffer = Napi::Buffer<float>::Copy(
                     env,
                     sample.data.data(),
@@ -159,10 +247,8 @@ Napi::Value ScreenCaptureAddon::StartCapture(const Napi::CallbackInfo& info) {
                 sampleObj.Set("channelCount", Napi::Number::New(env, sample.channelCount));
                 sampleObj.Set("timestamp", Napi::Number::New(env, sample.timestamp));
 
-                // Call the JavaScript callback - may throw
                 jsCallback.Call({sampleObj});
 
-                // Check if an exception occurred
                 if (env.IsExceptionPending()) {
                     Napi::Error error = env.GetAndClearPendingException();
                     fprintf(stderr, "Error in audio callback: %s\n", error.Message().c_str());
@@ -179,9 +265,74 @@ Napi::Value ScreenCaptureAddon::StartCapture(const Napi::CallbackInfo& info) {
         if (tsfn_) {
             tsfn_.BlockingCall(callback);
         }
-    });
+    };
 
+    bool success = starter(config, nativeCallback);
     return Napi::Boolean::New(env, success);
+}
+
+
+Napi::Value ScreenCaptureAddon::StartCapture(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 3) {
+        Napi::TypeError::New(env, "Expected 3 arguments: processId, config, and callback").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    if (!info[0].IsNumber()) {
+        Napi::TypeError::New(env, "First argument must be a number (processId)").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    int processId = info[0].As<Napi::Number>().Int32Value();
+    auto starter = [this, processId](const CaptureConfig& config, const std::function<void(const AudioSample&)>& cb) {
+        return wrapper_->startCapture(processId, config, cb);
+    };
+
+    return StartCaptureWithConfig(info, starter);
+}
+
+Napi::Value ScreenCaptureAddon::StartCaptureForWindow(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 3) {
+        Napi::TypeError::New(env, "Expected 3 arguments: windowId, config, and callback").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    if (!info[0].IsNumber()) {
+        Napi::TypeError::New(env, "First argument must be a number (windowId)").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    uint64_t windowId = static_cast<uint64_t>(info[0].As<Napi::Number>().Int64Value());
+    auto starter = [this, windowId](const CaptureConfig& config, const std::function<void(const AudioSample&)>& cb) {
+        return wrapper_->startCaptureForWindow(windowId, config, cb);
+    };
+
+    return StartCaptureWithConfig(info, starter);
+}
+
+Napi::Value ScreenCaptureAddon::StartCaptureForDisplay(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 3) {
+        Napi::TypeError::New(env, "Expected 3 arguments: displayId, config, and callback").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    if (!info[0].IsNumber()) {
+        Napi::TypeError::New(env, "First argument must be a number (displayId)").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    uint32_t displayId = info[0].As<Napi::Number>().Uint32Value();
+    auto starter = [this, displayId](const CaptureConfig& config, const std::function<void(const AudioSample&)>& cb) {
+        return wrapper_->startCaptureForDisplay(displayId, config, cb);
+    };
+
+    return StartCaptureWithConfig(info, starter);
 }
 
 Napi::Value ScreenCaptureAddon::StopCapture(const Napi::CallbackInfo& info) {

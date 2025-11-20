@@ -2,6 +2,7 @@
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
+#import <CoreGraphics/CoreGraphics.h>
 #include <thread>
 #include <mutex>
 
@@ -72,6 +73,220 @@ struct WrapperImpl {
     std::mutex mutex;
 };
 
+namespace {
+
+Rect RectFromCGRect(CGRect rect) {
+    Rect result;
+    result.x = rect.origin.x;
+    result.y = rect.origin.y;
+    result.width = rect.size.width;
+    result.height = rect.size.height;
+    return result;
+}
+
+void HandleSampleBuffer(CMSampleBufferRef sampleBuffer, WrapperImpl *wrapper) {
+    if (!wrapper || !wrapper->callback) {
+        return;
+    }
+
+    @try {
+        // Get format description first
+        CMFormatDescriptionRef formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer);
+        if (!formatDescription) {
+            NSLog(@"No format description available");
+            return;
+        }
+
+        const AudioStreamBasicDescription *asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription);
+        if (!asbd) {
+            NSLog(@"No audio stream basic description available");
+            return;
+        }
+
+        AudioSample sample;
+        sample.sampleRate = (int)asbd->mSampleRate;
+        sample.channelCount = (int)asbd->mChannelsPerFrame;
+        sample.timestamp = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer));
+
+        UInt32 expectedBuffers = (asbd->mFormatFlags & kAudioFormatFlagIsNonInterleaved)
+            ? asbd->mChannelsPerFrame
+            : 1;
+
+        if (expectedBuffers > 16) {
+            expectedBuffers = 16;
+        }
+
+        size_t audioBufferListSize = offsetof(AudioBufferList, mBuffers[0]) + (sizeof(AudioBuffer) * expectedBuffers);
+        AudioBufferList *audioBufferList = (AudioBufferList *)malloc(audioBufferListSize);
+        if (!audioBufferList) {
+            NSLog(@"Failed to allocate AudioBufferList for %u buffers", (unsigned int)expectedBuffers);
+            return;
+        }
+
+        CMBlockBufferRef blockBuffer = NULL;
+        OSStatus status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            NULL,
+            audioBufferList,
+            audioBufferListSize,
+            NULL,
+            NULL,
+            0,
+            &blockBuffer
+        );
+
+        if (status != noErr) {
+            NSLog(@"Failed to get audio buffer list: %d", (int)status);
+            free(audioBufferList);
+            return;
+        }
+
+        if (audioBufferList->mNumberBuffers > expectedBuffers) {
+            NSLog(@"Warning: AudioBufferList has %u buffers but we allocated for %u. Data may be truncated.",
+                  (unsigned int)audioBufferList->mNumberBuffers, (unsigned int)expectedBuffers);
+        }
+
+        bool isPlanar = (asbd->mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0;
+        bool isFloat = (asbd->mFormatFlags & kAudioFormatFlagIsFloat) != 0;
+        bool isInt = (asbd->mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0;
+
+        if (isPlanar) {
+            if (audioBufferList->mNumberBuffers == 0) {
+                free(audioBufferList);
+                if (blockBuffer) CFRelease(blockBuffer);
+                return;
+            }
+
+            size_t framesPerBuffer = 0;
+            if (isFloat) {
+                framesPerBuffer = audioBufferList->mBuffers[0].mDataByteSize / sizeof(float);
+            } else if (isInt) {
+                framesPerBuffer = audioBufferList->mBuffers[0].mDataByteSize / sizeof(int16_t);
+            }
+
+            for (size_t frame = 0; frame < framesPerBuffer; frame++) {
+                for (UInt32 channel = 0; channel < audioBufferList->mNumberBuffers && channel < expectedBuffers; channel++) {
+                    AudioBuffer audioBuffer = audioBufferList->mBuffers[channel];
+                    if (!audioBuffer.mData) continue;
+
+                    if (isFloat) {
+                        float *bufferData = (float *)audioBuffer.mData;
+                        sample.data.push_back(bufferData[frame]);
+                    } else if (isInt) {
+                        int16_t *bufferData = (int16_t *)audioBuffer.mData;
+                        float normalized = bufferData[frame] / 32768.0f;
+                        sample.data.push_back(normalized);
+                    }
+                }
+            }
+        } else {
+            for (UInt32 i = 0; i < audioBufferList->mNumberBuffers && i < expectedBuffers; i++) {
+                AudioBuffer audioBuffer = audioBufferList->mBuffers[i];
+
+                if (!audioBuffer.mData || audioBuffer.mDataByteSize == 0) {
+                    continue;
+                }
+
+                if (isFloat) {
+                    float *bufferData = (float *)audioBuffer.mData;
+                    size_t bufferSize = audioBuffer.mDataByteSize / sizeof(float);
+                    sample.data.insert(sample.data.end(), bufferData, bufferData + bufferSize);
+                } else if (isInt) {
+                    int16_t *bufferData = (int16_t *)audioBuffer.mData;
+                    size_t bufferSize = audioBuffer.mDataByteSize / sizeof(int16_t);
+                    for (size_t j = 0; j < bufferSize; j++) {
+                        float normalized = bufferData[j] / 32768.0f;
+                        sample.data.push_back(normalized);
+                    }
+                }
+            }
+        }
+
+        free(audioBufferList);
+        if (blockBuffer) {
+            CFRelease(blockBuffer);
+        }
+
+        if (sample.data.size() > 0) {
+            wrapper->callback(sample);
+        }
+    } @catch (NSException *exception) {
+        NSLog(@"Exception in audio callback: %@", exception);
+    }
+}
+
+bool StartStreamWithFilter(WrapperImpl *wrapper, SCContentFilter *filter, const CaptureConfig& config) {
+    if (!wrapper || !filter) {
+        return false;
+    }
+
+    wrapper->objcImpl.contentFilter = filter;
+
+    SCStreamConfiguration *streamConfig = [[SCStreamConfiguration alloc] init];
+    streamConfig.capturesAudio = YES;
+    streamConfig.sampleRate = config.sampleRate;
+    streamConfig.channelCount = config.channels;
+    streamConfig.excludesCurrentProcessAudio = YES;
+
+    if (config.bufferSize > 0) {
+        double bufferDuration = (double)config.bufferSize / (double)config.sampleRate;
+        streamConfig.minimumFrameInterval = CMTimeMake((int64_t)(bufferDuration * 1000000), 1000000);
+    }
+
+    AudioCaptureDelegate *delegate = [[AudioCaptureDelegate alloc] init];
+    delegate.audioCallback = ^(CMSampleBufferRef sampleBuffer) {
+        HandleSampleBuffer(sampleBuffer, wrapper);
+    };
+    wrapper->objcImpl.delegate = delegate;
+
+    NSError *streamError = nil;
+    SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:streamConfig delegate:delegate];
+
+    if (!stream) {
+        NSLog(@"Failed to create stream");
+        wrapper->objcImpl.contentFilter = nil;
+        wrapper->objcImpl.delegate = nil;
+        return false;
+    }
+
+    [stream addStreamOutput:delegate
+                       type:SCStreamOutputTypeAudio
+         sampleHandlerQueue:dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0)
+                     error:&streamError];
+
+    if (streamError) {
+        NSLog(@"Error adding stream output: %@", streamError.localizedDescription);
+        wrapper->objcImpl.contentFilter = nil;
+        wrapper->objcImpl.delegate = nil;
+        return false;
+    }
+
+    __block bool success = false;
+    dispatch_semaphore_t startSemaphore = dispatch_semaphore_create(0);
+
+    [stream startCaptureWithCompletionHandler:^(NSError * _Nullable error) {
+        if (error) {
+            NSLog(@"Error starting capture: %@", error.localizedDescription);
+            wrapper->objcImpl.isCapturing = NO;
+            wrapper->objcImpl.stream = nil;
+            wrapper->objcImpl.delegate = nil;
+            wrapper->objcImpl.contentFilter = nil;
+            success = false;
+        } else {
+            wrapper->objcImpl.stream = stream;
+            wrapper->objcImpl.isCapturing = YES;
+            success = true;
+        }
+        dispatch_semaphore_signal(startSemaphore);
+    }];
+
+    dispatch_semaphore_wait(startSemaphore, DISPATCH_TIME_FOREVER);
+
+    return success;
+}
+
+} // namespace
+
 ScreenCaptureKitWrapper::ScreenCaptureKitWrapper() {
     WrapperImpl *wrapper = new WrapperImpl();
     wrapper->objcImpl = [[ScreenCaptureKitImpl alloc] init];
@@ -114,6 +329,80 @@ std::vector<AppInfo> ScreenCaptureKitWrapper::getAvailableApps() {
     return apps;
 }
 
+std::vector<WindowInfo> ScreenCaptureKitWrapper::getAvailableWindows() {
+    __block std::vector<WindowInfo> windows;
+
+    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+
+    [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
+        if (error) {
+            NSLog(@"Error getting shareable windows: %@", error.localizedDescription);
+        } else if (content) {
+            for (SCWindow *window in content.windows) {
+                WindowInfo info;
+                info.windowId = window.windowID;
+                info.frame = RectFromCGRect(window.frame);
+                info.layer = (int)window.windowLayer;
+                info.onScreen = window.isOnScreen;
+                BOOL isActive = NO;
+                if ([window respondsToSelector:@selector(isActive)]) {
+                    isActive = window.isActive;
+                }
+                info.active = isActive;
+                info.title = window.title ? std::string([window.title UTF8String]) : "";
+
+                if (window.owningApplication) {
+                    info.owningProcessId = window.owningApplication.processID;
+                    info.owningApplicationName = window.owningApplication.applicationName
+                        ? std::string([window.owningApplication.applicationName UTF8String])
+                        : "";
+                    info.owningBundleIdentifier = window.owningApplication.bundleIdentifier
+                        ? std::string([window.owningApplication.bundleIdentifier UTF8String])
+                        : "";
+                } else {
+                    info.owningProcessId = 0;
+                    info.owningApplicationName.clear();
+                    info.owningBundleIdentifier.clear();
+                }
+
+                windows.push_back(info);
+            }
+        }
+        dispatch_semaphore_signal(semaphore);
+    }];
+
+    dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+    return windows;
+}
+
+std::vector<DisplayInfo> ScreenCaptureKitWrapper::getAvailableDisplays() {
+    __block std::vector<DisplayInfo> displays;
+    CGDirectDisplayID mainDisplay = CGMainDisplayID();
+
+    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+
+    [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
+        if (error) {
+            NSLog(@"Error getting displays: %@", error.localizedDescription);
+        } else if (content) {
+            for (SCDisplay *display in content.displays) {
+                DisplayInfo info;
+                info.displayId = display.displayID;
+                info.frame = RectFromCGRect(display.frame);
+                info.width = (int)display.width;
+                info.height = (int)display.height;
+                info.isMainDisplay = (display.displayID == mainDisplay);
+                displays.push_back(info);
+            }
+        }
+        dispatch_semaphore_signal(semaphore);
+    }];
+
+    dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+    return displays;
+}
+
+
 bool ScreenCaptureKitWrapper::startCapture(int processId, const CaptureConfig& config, std::function<void(const AudioSample&)> callback) {
     if (!impl) return false;
 
@@ -150,29 +439,8 @@ bool ScreenCaptureKitWrapper::startCapture(int processId, const CaptureConfig& c
             return;
         }
 
-        // Create stream configuration using provided config
-        SCStreamConfiguration *streamConfig = [[SCStreamConfiguration alloc] init];
-        streamConfig.capturesAudio = YES;
-        streamConfig.sampleRate = config.sampleRate;
-        streamConfig.channelCount = config.channels;
-        streamConfig.excludesCurrentProcessAudio = YES;
-
-        // Apply buffer size if specified (0 means use system default)
-        if (config.bufferSize > 0) {
-            // Calculate preferred IO buffer duration in seconds
-            // bufferSize is in frames, so duration = frames / sampleRate
-            double bufferDuration = (double)config.bufferSize / (double)config.sampleRate;
-            streamConfig.minimumFrameInterval = CMTimeMake((int64_t)(bufferDuration * 1000000), 1000000);
-        }
-
-        // Note: excludeCursor will be used when video capture is added
-        // For now it's stored in the config but not applied (audio-only capture)
-
-        // For capturing app audio, we can use a display-based filter
-        // or filter by application windows
-        SCContentFilter *filter;
+        SCContentFilter *filter = nil;
         if (content.displays.count > 0) {
-            // Capture from main display, excluding all apps except the target
             NSMutableArray *excludedApps = [NSMutableArray arrayWithArray:content.applications];
             [excludedApps removeObject:targetApp];
             filter = [[SCContentFilter alloc] initWithDisplay:content.displays.firstObject
@@ -184,193 +452,110 @@ bool ScreenCaptureKitWrapper::startCapture(int processId, const CaptureConfig& c
             return;
         }
 
-        wrapper->objcImpl.contentFilter = filter;
-
-        // Create delegate
-        AudioCaptureDelegate *delegate = [[AudioCaptureDelegate alloc] init];
-
-        // Set up audio callback
-        delegate.audioCallback = ^(CMSampleBufferRef sampleBuffer) {
-            if (!wrapper->callback) return;
-
-            @try {
-                // Get format description first
-                CMFormatDescriptionRef formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer);
-                if (!formatDescription) {
-                    NSLog(@"No format description available");
-                    return;
-                }
-
-                const AudioStreamBasicDescription *asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription);
-                if (!asbd) {
-                    NSLog(@"No audio stream basic description available");
-                    return;
-                }
-
-                AudioSample sample;
-                sample.sampleRate = (int)asbd->mSampleRate;
-                sample.channelCount = (int)asbd->mChannelsPerFrame;
-                sample.timestamp = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer));
-
-                // Determine expected number of buffers based on format flags
-                // For planar audio: mNumberBuffers = mChannelsPerFrame
-                // For interleaved: mNumberBuffers = 1
-                UInt32 expectedBuffers = (asbd->mFormatFlags & kAudioFormatFlagIsNonInterleaved)
-                    ? asbd->mChannelsPerFrame
-                    : 1;
-
-                // Safety limit: cap at 16 channels to prevent excessive allocation
-                if (expectedBuffers > 16) {
-                    expectedBuffers = 16;
-                }
-
-                // Allocate enough space for the AudioBufferList with the expected number of buffers
-                size_t audioBufferListSize = offsetof(AudioBufferList, mBuffers[0]) + (sizeof(AudioBuffer) * expectedBuffers);
-                AudioBufferList *audioBufferList = (AudioBufferList *)malloc(audioBufferListSize);
-                if (!audioBufferList) {
-                    NSLog(@"Failed to allocate AudioBufferList for %u buffers", (unsigned int)expectedBuffers);
-                    return;
-                }
-
-                CMBlockBufferRef blockBuffer = NULL;
-                OSStatus status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-                    sampleBuffer,
-                    NULL,
-                    audioBufferList,
-                    audioBufferListSize,
-                    NULL,
-                    NULL,
-                    0,
-                    &blockBuffer
-                );
-
-                if (status != noErr) {
-                    NSLog(@"Failed to get audio buffer list: %d", (int)status);
-                    free(audioBufferList);
-                    return;
-                }
-
-                // Validate that we didn't overflow our allocation
-                if (audioBufferList->mNumberBuffers > expectedBuffers) {
-                    NSLog(@"Warning: AudioBufferList has %u buffers but we allocated for %u. Data may be truncated.",
-                          (unsigned int)audioBufferList->mNumberBuffers, (unsigned int)expectedBuffers);
-                }
-
-                // Handle planar vs interleaved audio based on format flags
-                bool isPlanar = (asbd->mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0;
-                bool isFloat = (asbd->mFormatFlags & kAudioFormatFlagIsFloat) != 0;
-                bool isInt = (asbd->mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0;
-
-                if (isPlanar) {
-                    // Planar audio: each buffer contains one channel, need to interleave
-                    // Find the number of frames (samples per channel)
-                    if (audioBufferList->mNumberBuffers == 0) {
-                        free(audioBufferList);
-                        if (blockBuffer) CFRelease(blockBuffer);
-                        return;
-                    }
-
-                    size_t framesPerBuffer = 0;
-                    if (isFloat) {
-                        framesPerBuffer = audioBufferList->mBuffers[0].mDataByteSize / sizeof(float);
-                    } else if (isInt) {
-                        framesPerBuffer = audioBufferList->mBuffers[0].mDataByteSize / sizeof(int16_t);
-                    }
-
-                    // Interleave the channels
-                    for (size_t frame = 0; frame < framesPerBuffer; frame++) {
-                        for (UInt32 channel = 0; channel < audioBufferList->mNumberBuffers && channel < expectedBuffers; channel++) {
-                            AudioBuffer audioBuffer = audioBufferList->mBuffers[channel];
-                            if (!audioBuffer.mData) continue;
-
-                            if (isFloat) {
-                                float *bufferData = (float *)audioBuffer.mData;
-                                sample.data.push_back(bufferData[frame]);
-                            } else if (isInt) {
-                                int16_t *bufferData = (int16_t *)audioBuffer.mData;
-                                float normalized = bufferData[frame] / 32768.0f;
-                                sample.data.push_back(normalized);
-                            }
-                        }
-                    }
-                } else {
-                    // Interleaved audio: all channels in one buffer, copy directly
-                    for (UInt32 i = 0; i < audioBufferList->mNumberBuffers && i < expectedBuffers; i++) {
-                        AudioBuffer audioBuffer = audioBufferList->mBuffers[i];
-
-                        if (!audioBuffer.mData || audioBuffer.mDataByteSize == 0) {
-                            continue;
-                        }
-
-                        if (isFloat) {
-                            // Float32 format
-                            float *bufferData = (float *)audioBuffer.mData;
-                            size_t bufferSize = audioBuffer.mDataByteSize / sizeof(float);
-                            sample.data.insert(sample.data.end(), bufferData, bufferData + bufferSize);
-                        } else if (isInt) {
-                            // Int16 format - convert to float
-                            int16_t *bufferData = (int16_t *)audioBuffer.mData;
-                            size_t bufferSize = audioBuffer.mDataByteSize / sizeof(int16_t);
-                            for (size_t j = 0; j < bufferSize; j++) {
-                                float normalized = bufferData[j] / 32768.0f;
-                                sample.data.push_back(normalized);
-                            }
-                        }
-                    }
-                }
-
-                // Clean up
-                free(audioBufferList);
-                if (blockBuffer) {
-                    CFRelease(blockBuffer);
-                }
-
-                // Call the C++ callback
-                if (sample.data.size() > 0) {
-                    wrapper->callback(sample);
-                }
-            } @catch (NSException *exception) {
-                NSLog(@"Exception in audio callback: %@", exception);
-            }
-        };
-
-        wrapper->objcImpl.delegate = delegate;
-
-        // Create and start the stream
-        NSError *streamError = nil;
-        SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:streamConfig delegate:delegate];
-
-        if (!stream) {
-            NSLog(@"Failed to create stream");
-            dispatch_semaphore_signal(semaphore);
-            return;
-        }
-
-        // Add audio output
-        [stream addStreamOutput:delegate type:SCStreamOutputTypeAudio sampleHandlerQueue:dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0) error:&streamError];
-
-        if (streamError) {
-            NSLog(@"Error adding stream output: %@", streamError.localizedDescription);
-            dispatch_semaphore_signal(semaphore);
-            return;
-        }
-
-        // Start capture
-        [stream startCaptureWithCompletionHandler:^(NSError * _Nullable error) {
-            if (error) {
-                NSLog(@"Error starting capture: %@", error.localizedDescription);
-                success = false;
-            } else {
-                wrapper->objcImpl.stream = stream;
-                wrapper->objcImpl.isCapturing = YES;
-                success = true;
-            }
-            dispatch_semaphore_signal(semaphore);
-        }];
+        success = StartStreamWithFilter(wrapper, filter, config);
+        dispatch_semaphore_signal(semaphore);
     }];
 
     dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
 
+    return success;
+}
+
+bool ScreenCaptureKitWrapper::startCaptureForWindow(uint64_t windowId, const CaptureConfig& config, std::function<void(const AudioSample&)> callback) {
+    if (!impl) return false;
+
+    WrapperImpl *wrapper = static_cast<WrapperImpl*>(impl);
+    std::lock_guard<std::mutex> lock(wrapper->mutex);
+
+    if (wrapper->objcImpl.isCapturing) {
+        return false; // Already capturing
+    }
+
+    wrapper->callback = callback;
+    __block bool success = false;
+    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+
+    [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
+        if (error || !content) {
+            NSLog(@"Error getting shareable content: %@", error.localizedDescription);
+            dispatch_semaphore_signal(semaphore);
+            return;
+        }
+
+        SCWindow *targetWindow = nil;
+        for (SCWindow *window in content.windows) {
+            if (window.windowID == windowId) {
+                targetWindow = window;
+                break;
+            }
+        }
+
+        if (!targetWindow) {
+            NSLog(@"Could not find window with ID: %llu", (unsigned long long)windowId);
+            dispatch_semaphore_signal(semaphore);
+            return;
+        }
+
+        SCContentFilter *filter = [[SCContentFilter alloc] initWithDesktopIndependentWindow:targetWindow];
+
+        if (!filter) {
+            NSLog(@"Failed to create content filter for window: %llu", (unsigned long long)windowId);
+            dispatch_semaphore_signal(semaphore);
+            return;
+        }
+
+        success = StartStreamWithFilter(wrapper, filter, config);
+        dispatch_semaphore_signal(semaphore);
+    }];
+
+    dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+    return success;
+}
+
+bool ScreenCaptureKitWrapper::startCaptureForDisplay(uint32_t displayId, const CaptureConfig& config, std::function<void(const AudioSample&)> callback) {
+    if (!impl) return false;
+
+    WrapperImpl *wrapper = static_cast<WrapperImpl*>(impl);
+    std::lock_guard<std::mutex> lock(wrapper->mutex);
+
+    if (wrapper->objcImpl.isCapturing) {
+        return false; // Already capturing
+    }
+
+    wrapper->callback = callback;
+    __block bool success = false;
+    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+
+    [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
+        if (error || !content) {
+            NSLog(@"Error getting shareable content: %@", error.localizedDescription);
+            dispatch_semaphore_signal(semaphore);
+            return;
+        }
+
+        SCDisplay *targetDisplay = nil;
+        for (SCDisplay *display in content.displays) {
+            if (display.displayID == displayId) {
+                targetDisplay = display;
+                break;
+            }
+        }
+
+        if (!targetDisplay) {
+            NSLog(@"Could not find display with ID: %u", (unsigned int)displayId);
+            dispatch_semaphore_signal(semaphore);
+            return;
+        }
+
+        SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:targetDisplay
+                                                     excludingApplications:@[]
+                                                        exceptingWindows:@[]];
+
+        success = StartStreamWithFilter(wrapper, filter, config);
+        dispatch_semaphore_signal(semaphore);
+    }];
+
+    dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
     return success;
 }
 
