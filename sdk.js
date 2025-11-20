@@ -203,13 +203,14 @@ class STTConverter extends Transform {
 
     if (format === 'int16') {
       const stereo = new Int16Array(buffer.buffer, buffer.byteOffset, buffer.length / 2);
-      const monoView = new Int16Array(mono.buffer);
+      const monoView = new Int16Array(mono.buffer, mono.byteOffset, frameCount);
       for (let i = 0; i < frameCount; i++) {
         monoView[i] = Math.floor((stereo[i * 2] + stereo[i * 2 + 1]) / 2);
       }
     } else {
       const stereo = new Float32Array(buffer.buffer, buffer.byteOffset, buffer.length / 4);
-      const monoView = new Float32Array(mono.buffer);
+      const monoView = new Float32Array(mono.buffer, mono.byteOffset, frameCount);
+      
       for (let i = 0; i < frameCount; i++) {
         monoView[i] = (stereo[i * 2] + stereo[i * 2 + 1]) / 2;
       }
@@ -271,14 +272,79 @@ class AudioCapture extends EventEmitter {
     this.capturing = false;
     this.currentProcessId = null;
     this.currentAppInfo = null;
+    this._currentTarget = null;
+    this.captureOptions = {
+      minVolume: 0,
+      format: 'float32',
+    };
+
+    // Activity tracking for smart app filtering/sorting
+    this._audioActivityCache = new Map(); // PID -> { lastSeen, avgRMS, sampleCount }
+    this._activityTrackingEnabled = false;
+    this._activityDecayMs = 30000; // Remove apps from cache after 30s of inactivity
   }
 
   /**
    * Get all available applications
+   * @param {Object} options - Filter options
+   * @param {boolean} [options.includeEmpty=false] - Include apps with empty applicationName (default: false)
    * @returns {Array<{processId: number, bundleIdentifier: string, applicationName: string}>}
    */
-  getApplications() {
-    return this.captureKit.getAvailableApps();
+  getApplications(options = {}) {
+    const { includeEmpty = false } = options;
+    const apps = this.captureKit.getAvailableApps();
+
+    // Filter out apps with empty names by default (helper processes, background services)
+    if (!includeEmpty) {
+      return apps.filter(app =>
+        app.applicationName &&
+        app.applicationName.trim().length > 0 &&
+        app.bundleIdentifier &&
+        app.bundleIdentifier.trim().length > 0
+      );
+    }
+
+    return apps;
+  }
+
+  /**
+   * Get capturable windows exposed by ScreenCaptureKit
+   * @param {Object} options - Filter options
+   * @param {boolean} [options.onScreenOnly=false] - Only include windows currently on screen
+   * @param {boolean} [options.requireTitle=false] - Exclude untitled/hidden windows
+   * @param {number} [options.processId] - Filter by owning process ID
+   * @returns {WindowInfo[]} Array of window information objects
+   */
+  getWindows(options = {}) {
+    this._assertNativeMethod('getAvailableWindows', 'Window enumeration');
+    const windows = this.captureKit.getAvailableWindows() || [];
+    const {
+      onScreenOnly = false,
+      requireTitle = false,
+      processId
+    } = options;
+
+    return windows.filter((window) => {
+      if (onScreenOnly && !window.onScreen) {
+        return false;
+      }
+      if (requireTitle && (!window.title || window.title.trim().length === 0)) {
+        return false;
+      }
+      if (typeof processId === 'number' && window.owningProcessId !== processId) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  /**
+   * Get displays that can be captured
+   * @returns {DisplayInfo[]} Array of display information objects
+   */
+  getDisplays() {
+    this._assertNativeMethod('getAvailableDisplays', 'Display enumeration');
+    return this.captureKit.getAvailableDisplays() || [];
   }
 
   /**
@@ -308,50 +374,75 @@ class AudioCapture extends EventEmitter {
    * Get only applications likely to produce audio
    * Filters out system apps and utilities that typically don't have audio
    * @param {Object} options - Filter options
-   * @param {boolean} options.includeSystemApps - If true, returns all apps (same as getApplications())
+   * @param {boolean} [options.includeSystemApps=false] - If true, returns all apps (same as getApplications())
+   * @param {boolean} [options.includeEmpty=false] - Include apps with empty applicationName
+   * @param {boolean} [options.sortByActivity=false] - Sort by recent audio activity (requires enableActivityTracking())
    * @returns {Array<{processId: number, bundleIdentifier: string, applicationName: string}>}
    */
   getAudioApps(options = {}) {
-    const apps = this.getApplications();
+    const { includeSystemApps = false, includeEmpty = false, sortByActivity = false } = options;
+    const apps = this.getApplications({ includeEmpty });
+
+    let filtered;
 
     // If includeSystemApps is true, return all apps
-    if (options.includeSystemApps) {
-      return apps;
+    if (includeSystemApps) {
+      filtered = apps;
+    } else {
+      // Common system/utility apps that typically don't have audio
+      const excludePatterns = [
+        /^finder$/i,
+        /^system/i,
+        /preferences$/i,
+        /settings$/i,
+        /^activity monitor$/i,
+        /^console$/i,
+        /^terminal$/i,
+        /^iterm/i,
+        /^ssh/i,
+        /^keychain/i,
+        /^calculator$/i,
+        /^notes$/i,
+        /^reminders$/i,
+        /^calendar$/i,
+        /^contacts$/i,
+        /^mail$/i,
+        /^messages$/i,
+        /^preview$/i,
+        /^textEdit$/i,
+        /^font book$/i,
+      ];
+
+      filtered = apps.filter(app => {
+        const name = app.applicationName;
+        return !excludePatterns.some(pattern => pattern.test(name));
+      });
+
+      // If filtering resulted in empty array, provide helpful guidance
+      if (filtered.length === 0 && apps.length > 0) {
+        // Add a helpful property to indicate fallback is available
+        filtered._hint = 'No audio apps found after filtering. Try getAudioApps({ includeSystemApps: true }) or getApplications() to see all apps.';
+      }
     }
 
-    // Common system/utility apps that typically don't have audio
-    const excludePatterns = [
-      /^finder$/i,
-      /^system/i,
-      /preferences$/i,
-      /settings$/i,
-      /^activity monitor$/i,
-      /^console$/i,
-      /^terminal$/i,
-      /^iterm/i,
-      /^ssh/i,
-      /^keychain/i,
-      /^calculator$/i,
-      /^notes$/i,
-      /^reminders$/i,
-      /^calendar$/i,
-      /^contacts$/i,
-      /^mail$/i,
-      /^messages$/i,
-      /^preview$/i,
-      /^textEdit$/i,
-      /^font book$/i,
-    ];
+    // Sort by recent audio activity if requested and tracking is enabled
+    if (sortByActivity && this._activityTrackingEnabled) {
+      const now = Date.now();
+      // Clean up stale entries
+      for (const [pid, activity] of this._audioActivityCache.entries()) {
+        if (now - activity.lastSeen > this._activityDecayMs) {
+          this._audioActivityCache.delete(pid);
+        }
+      }
 
-    const filtered = apps.filter(app => {
-      const name = app.applicationName;
-      return !excludePatterns.some(pattern => pattern.test(name));
-    });
-
-    // If filtering resulted in empty array, provide helpful guidance
-    if (filtered.length === 0 && apps.length > 0) {
-      // Add a helpful property to indicate fallback is available
-      filtered._hint = 'No audio apps found after filtering. Try getAudioApps({ includeSystemApps: true }) or getApplications() to see all apps.';
+      // Sort by last seen time (most recent first)
+      filtered.sort((a, b) => {
+        const aActivity = this._audioActivityCache.get(a.processId);
+        const bActivity = this._audioActivityCache.get(b.processId);
+        const aTime = aActivity ? aActivity.lastSeen : 0;
+        const bTime = bActivity ? bActivity.lastSeen : 0;
+        return bTime - aTime;
+      });
     }
 
     return filtered;
@@ -389,11 +480,13 @@ class AudioCapture extends EventEmitter {
   selectApp(identifiers = null, options = {}) {
     const { audioOnly = true, throwOnNotFound = false } = options;
 
-    // If no identifiers provided, return first audio app
-    if (!identifiers) {
-      const audioApps = audioOnly ? this.getAudioApps() : this.getApplications();
-      if (audioApps.length > 0) {
-        return audioApps[0];
+    // Get app list once
+    const apps = audioOnly ? this.getAudioApps() : this.getApplications();
+
+    // If no identifiers provided or empty array, return first audio app
+    if (!identifiers || (Array.isArray(identifiers) && identifiers.length === 0)) {
+      if (apps.length > 0) {
+        return apps[0];
       }
 
       if (throwOnNotFound) {
@@ -409,18 +502,23 @@ class AudioCapture extends EventEmitter {
     // Normalize to array
     const identifierList = Array.isArray(identifiers) ? identifiers : [identifiers];
 
-    // Get app list once
-    const apps = audioOnly ? this.getAudioApps() : this.getApplications();
-
     // Try each identifier in order
+    let hasValidIdentifier = false;
     for (const identifier of identifierList) {
       let app = null;
 
       if (typeof identifier === 'number') {
+        hasValidIdentifier = true;
         // Try as PID
         app = apps.find(a => a.processId === identifier);
       } else if (typeof identifier === 'string') {
-        const search = identifier.toLowerCase();
+        // Skip empty or whitespace-only strings
+        const search = identifier.toLowerCase().trim();
+        if (search.length === 0) {
+          continue;
+        }
+
+        hasValidIdentifier = true;
 
         // Try exact name match first
         app = apps.find(a => a.applicationName.toLowerCase() === search);
@@ -447,6 +545,11 @@ class AudioCapture extends EventEmitter {
       }
     }
 
+    // If no valid identifiers were provided (all empty/whitespace), return first app
+    if (!hasValidIdentifier && apps.length > 0) {
+      return apps[0];
+    }
+
     // No app found
     if (throwOnNotFound) {
       const identifierStr = Array.isArray(identifiers) ? identifiers.join(', ') : identifiers;
@@ -462,6 +565,68 @@ class AudioCapture extends EventEmitter {
     }
 
     return null;
+  }
+
+  /**
+   * Enable background tracking of audio activity
+   * Tracks which apps are producing audio for smarter filtering and sorting
+   * @param {Object} options - Tracking options
+   * @param {number} [options.decayMs=30000] - Remove apps from cache after this many ms of inactivity (default: 30s)
+   * @returns {void}
+   * @example
+   * capture.enableActivityTracking();
+   *
+   * // Later, get apps sorted by recent activity
+   * const apps = capture.getAudioApps({ sortByActivity: true });
+   * // Apps that recently produced audio appear first
+   */
+  enableActivityTracking(options = {}) {
+    const { decayMs = 30000 } = options;
+    this._activityTrackingEnabled = true;
+    this._activityDecayMs = decayMs;
+  }
+
+  /**
+   * Disable activity tracking and clear the cache
+   * @returns {void}
+   */
+  disableActivityTracking() {
+    this._activityTrackingEnabled = false;
+    this._audioActivityCache.clear();
+  }
+
+  /**
+   * Get activity tracking status and statistics
+   * @returns {Object} Activity tracking info
+   * @returns {boolean} return.enabled - Whether tracking is enabled
+   * @returns {number} return.trackedApps - Number of apps currently in cache
+   * @returns {Array} return.recentApps - Recently active apps with metadata
+   */
+  getActivityInfo() {
+    const now = Date.now();
+    const recentApps = [];
+
+    for (const [pid, activity] of this._audioActivityCache.entries()) {
+      const age = now - activity.lastSeen;
+      if (age < this._activityDecayMs) {
+        recentApps.push({
+          processId: pid,
+          lastSeen: activity.lastSeen,
+          ageMs: age,
+          avgRMS: activity.avgRMS,
+          sampleCount: activity.sampleCount
+        });
+      }
+    }
+
+    // Sort by most recent first
+    recentApps.sort((a, b) => a.ageMs - b.ageMs);
+
+    return {
+      enabled: this._activityTrackingEnabled,
+      trackedApps: recentApps.length,
+      recentApps
+    };
   }
 
   /**
@@ -522,10 +687,15 @@ class AudioCapture extends EventEmitter {
       return null;
     }
 
+    const snapshot = this._createTargetSnapshot();
+
     return {
       capturing: true,
-      processId: this.currentProcessId,
-      app: this.currentAppInfo,
+      processId: snapshot ? snapshot.processId : null,
+      app: snapshot ? snapshot.app : null,
+      targetType: snapshot ? snapshot.targetType : 'application',
+      window: snapshot ? snapshot.window : null,
+      display: snapshot ? snapshot.display : null,
       config: {
         minVolume: this.captureOptions.minVolume,
         format: this.captureOptions.format,
@@ -569,30 +739,6 @@ class AudioCapture extends EventEmitter {
    * capture.startCapture('Spotify', { sampleRate: 44100, channels: 1, format: 'int16' });
    */
   startCapture(appIdentifier, options = {}) {
-    if (this.capturing) {
-      const error = new AudioCaptureError(
-        'Already capturing. Stop current capture first.',
-        ErrorCodes.ALREADY_CAPTURING,
-        { currentProcessId: this.currentProcessId, currentApp: this.currentAppInfo }
-      );
-      this.emit('error', error);
-      throw error;
-    }
-
-    // Store options for use in callback (JavaScript-level processing)
-    this.captureOptions = {
-      minVolume: options.minVolume || 0,
-      format: options.format || 'float32',
-    };
-
-    // Prepare native configuration options
-    const nativeConfig = {
-      sampleRate: options.sampleRate || 48000,
-      channels: options.channels || 2,
-      bufferSize: options.bufferSize,
-      excludeCursor: options.excludeCursor !== undefined ? options.excludeCursor : true,
-    };
-
     let processId;
     let appInfo;
 
@@ -655,91 +801,108 @@ class AudioCapture extends EventEmitter {
       throw error;
     }
 
-    const success = this.captureKit.startCapture(processId, nativeConfig, (sample) => {
-      // Enhance sample with computed properties
-      const rms = this._calculateRMS(sample.data);
-      const peak = this._calculatePeak(sample.data);
-
-      // Apply volume threshold filter
-      if (rms < this.captureOptions.minVolume) {
-        return; // Skip this sample if below threshold
+    const target = {
+      type: 'application',
+      processId,
+      app: appInfo,
+      window: null,
+      display: null,
+      failureMessage: 'Failed to start capture',
+      failureDetails: {
+        processId,
+        app: appInfo,
+        suggestion: 'The application may not have visible windows or may not support audio capture.'
       }
+    };
 
-      let audioData = sample.data;
-      let actualFormat = 'float32'; // Native layer always provides Float32
+    const nativeStarter = (nativeConfig, callback) => this.captureKit.startCapture(processId, nativeConfig, callback);
+    return this._startNativeCapture(target, options, nativeStarter);
+  }
 
-      // Apply format conversion if requested
-      if (this.captureOptions.format === 'int16') {
-        audioData = this._convertToInt16(sample.data);
-        actualFormat = 'int16'; // Format changed after conversion
-      }
-
-      // Calculate actual sample count (original data is always Float32 from native layer)
-      const bytesPerSample = 4; // Float32 = 4 bytes
-      const totalSamples = sample.data.length / bytesPerSample;
-      const framesCount = totalSamples / sample.channelCount;
-      const durationMs = (framesCount / sample.sampleRate) * 1000;
-
-      const enhancedSample = {
-        data: audioData,
-        sampleRate: sample.sampleRate,
-        channels: sample.channelCount,
-        timestamp: sample.timestamp,
-        format: actualFormat, // Report actual format of the data, not requested format
-        // Computed properties
-        sampleCount: totalSamples, // Total number of sample values (not bytes)
-        framesCount: framesCount,  // Number of frames (samples per channel)
-        durationMs: durationMs,
-        rms: rms,
-        peak: peak,
-      };
-
-      /**
-       * Audio event
-       * @event AudioCapture#audio
-       * @type {object}
-       * @property {Buffer} data - Audio samples (Float32 or Int16 depending on format option)
-       * @property {number} sampleRate - Sample rate in Hz
-       * @property {number} channels - Number of channels
-       * @property {number} timestamp - Timestamp in seconds
-       * @property {string} format - Audio format ('float32' or 'int16')
-       * @property {number} sampleCount - Total number of sample values across all channels
-       * @property {number} framesCount - Number of frames (sample values per channel)
-       * @property {number} durationMs - Duration in milliseconds
-       * @property {number} rms - RMS volume (0.0 to 1.0)
-       * @property {number} peak - Peak volume (0.0 to 1.0)
-       */
-      this.emit('audio', enhancedSample);
-    });
-
-    if (success) {
-      this.capturing = true;
-      this.currentProcessId = processId;
-      this.currentAppInfo = appInfo;
-
-      /**
-       * Start event
-       * @event AudioCapture#start
-       * @type {object}
-       * @property {number} processId - Process ID being captured
-       * @property {Object} app - Application info with applicationName, bundleIdentifier, and processId
-       */
-      this.emit('start', { processId, app: appInfo });
-    } else {
-      const error = new AudioCaptureError(
-        'Failed to start capture',
-        ErrorCodes.CAPTURE_FAILED,
-        {
-          processId: processId,
-          app: appInfo,
-          suggestion: 'The application may not have visible windows or may not support audio capture.'
-        }
+  /**
+   * Start capture for a specific window ID
+   * @param {number} windowId - Window identifier from getWindows()
+   * @param {Object} options - Capture options (same as startCapture)
+   * @returns {boolean} true if capture started successfully
+   */
+  captureWindow(windowId, options = {}) {
+    this._assertNativeMethod('startCaptureForWindow', 'Window capture');
+    if (typeof windowId !== 'number') {
+      throw new AudioCaptureError(
+        'windowId must be a number.',
+        ErrorCodes.INVALID_ARGUMENT,
+        { receivedType: typeof windowId, expectedTypes: ['number'] }
       );
-      this.emit('error', error);
-      throw error;
     }
 
-    return success;
+    const windowInfo = this.getWindows().find((window) => window.windowId === windowId);
+    if (!windowInfo) {
+      throw new AudioCaptureError(
+        `Window with ID ${windowId} not found. Call getWindows() to list available windows.`,
+        ErrorCodes.INVALID_ARGUMENT,
+        { windowId }
+      );
+    }
+
+    const owningProcessId = typeof windowInfo.owningProcessId === 'number' ? windowInfo.owningProcessId : null;
+    const owningApp = owningProcessId ? this.getApplicationByPid(owningProcessId) : null;
+
+    const target = {
+      type: 'window',
+      processId: owningProcessId,
+      app: owningApp,
+      window: windowInfo,
+      display: null,
+      failureMessage: 'Failed to start window capture',
+      failureDetails: {
+        windowId,
+        owningProcessId
+      }
+    };
+
+    const nativeStarter = (nativeConfig, callback) => this.captureKit.startCaptureForWindow(windowId, nativeConfig, callback);
+    return this._startNativeCapture(target, options, nativeStarter);
+  }
+
+  /**
+   * Start capture for a display
+   * @param {number} displayId - Display identifier from getDisplays()
+   * @param {Object} options - Capture options (same as startCapture)
+   * @returns {boolean} true if capture started successfully
+   */
+  captureDisplay(displayId, options = {}) {
+    this._assertNativeMethod('startCaptureForDisplay', 'Display capture');
+    if (typeof displayId !== 'number') {
+      throw new AudioCaptureError(
+        'displayId must be a number.',
+        ErrorCodes.INVALID_ARGUMENT,
+        { receivedType: typeof displayId, expectedTypes: ['number'] }
+      );
+    }
+
+    const displayInfo = this.getDisplays().find((display) => display.displayId === displayId);
+    if (!displayInfo) {
+      throw new AudioCaptureError(
+        `Display with ID ${displayId} not found. Call getDisplays() to list available displays.`,
+        ErrorCodes.INVALID_ARGUMENT,
+        { displayId }
+      );
+    }
+
+    const target = {
+      type: 'display',
+      processId: null,
+      app: null,
+      window: null,
+      display: displayInfo,
+      failureMessage: 'Failed to start display capture',
+      failureDetails: {
+        displayId
+      }
+    };
+
+    const nativeStarter = (nativeConfig, callback) => this.captureKit.startCaptureForDisplay(displayId, nativeConfig, callback);
+    return this._startNativeCapture(target, options, nativeStarter);
   }
 
   /**
@@ -753,19 +916,28 @@ class AudioCapture extends EventEmitter {
 
     this.captureKit.stopCapture();
     this.capturing = false;
-    const processId = this.currentProcessId;
-    const appInfo = this.currentAppInfo;
+    const snapshot = this._createTargetSnapshot();
     this.currentProcessId = null;
     this.currentAppInfo = null;
+    this._currentTarget = null;
 
     /**
      * Stop event
      * @event AudioCapture#stop
-     * @type {object}
-     * @property {number} processId - Process ID that was being captured
-     * @property {Object} app - Application info with applicationName, bundleIdentifier, and processId
+     * @type {CaptureInfo}
+     * @property {('application'|'window'|'display')} targetType - Target type that was being captured
+     * @property {number|null} processId - Process ID (null for display capture)
+     * @property {Object|null} app - Application info with applicationName, bundleIdentifier, and processId
+     * @property {Object|null} window - Window metadata when applicable
+     * @property {Object|null} display - Display metadata when applicable
      */
-    this.emit('stop', { processId, app: appInfo });
+    this.emit('stop', snapshot || {
+      processId: null,
+      app: null,
+      window: null,
+      display: null,
+      targetType: 'unknown'
+    });
   }
 
   /**
@@ -783,14 +955,11 @@ class AudioCapture extends EventEmitter {
    * @returns {Object|null} Current capture info or null if not capturing
    */
   getCurrentCapture() {
-    if (!this.capturing || !this.currentProcessId) {
+    if (!this.capturing) {
       return null;
     }
 
-    return {
-      processId: this.currentProcessId,
-      app: this.getApplicationByPid(this.currentProcessId),
-    };
+    return this._createTargetSnapshot();
   }
 
   /**
@@ -931,10 +1100,19 @@ class AudioCapture extends EventEmitter {
     );
 
     let sum = 0;
+    let validSamples = 0;
     for (let i = 0; i < floatView.length; i++) {
-      sum += floatView[i] * floatView[i];
+      const sample = floatView[i];
+      // Filter out NaN and extreme values
+      if (!isNaN(sample) && isFinite(sample)) {
+        // Clamp to reasonable audio range [-10, 10]
+        const clamped = Math.max(-10, Math.min(10, sample));
+        sum += clamped * clamped;
+        validSamples++;
+      }
     }
-    return Math.sqrt(sum / floatView.length);
+    if (validSamples === 0) return 0;
+    return Math.sqrt(sum / validSamples);
   }
 
   /**
@@ -954,8 +1132,14 @@ class AudioCapture extends EventEmitter {
 
     let peak = 0;
     for (let i = 0; i < floatView.length; i++) {
-      const abs = Math.abs(floatView[i]);
-      if (abs > peak) peak = abs;
+      const sample = floatView[i];
+      // Filter out NaN and extreme values
+      if (!isNaN(sample) && isFinite(sample)) {
+        // Clamp to reasonable audio range
+        const clamped = Math.max(-10, Math.min(10, sample));
+        const abs = Math.abs(clamped);
+        if (abs > peak) peak = abs;
+      }
     }
     return peak;
   }
@@ -1004,6 +1188,171 @@ class AudioCapture extends EventEmitter {
       buffer.byteOffset,
       buffer.byteLength / 4
     );
+  }
+
+  _buildNativeConfig(options = {}) {
+    return {
+      sampleRate: options.sampleRate || 48000,
+      channels: options.channels || 2,
+      bufferSize: options.bufferSize,
+      excludeCursor: options.excludeCursor !== undefined ? options.excludeCursor : true,
+    };
+  }
+
+  _startNativeCapture(target, options, startInvoker) {
+    if (this.capturing) {
+      const error = new AudioCaptureError(
+        'Already capturing. Stop current capture first.',
+        ErrorCodes.ALREADY_CAPTURING,
+        {
+          currentProcessId: this.currentProcessId,
+          currentApp: this.currentAppInfo,
+          currentTarget: this._createTargetSnapshot()
+        }
+      );
+      this.emit('error', error);
+      throw error;
+    }
+
+    this.captureOptions = {
+      minVolume: options.minVolume || 0,
+      format: options.format || 'float32',
+    };
+
+    const nativeConfig = this._buildNativeConfig(options);
+    const processIdForActivity = typeof target.processId === 'number' ? target.processId : null;
+
+    const success = startInvoker(nativeConfig, (sample) => this._handleNativeSample(sample, processIdForActivity));
+
+    if (success) {
+      this.capturing = true;
+      this.currentProcessId = processIdForActivity;
+      this.currentAppInfo = target.app || (processIdForActivity ? this.getApplicationByPid(processIdForActivity) : null);
+      this._currentTarget = {
+        processId: this.currentProcessId,
+        app: this.currentAppInfo,
+        window: this._cloneWindowInfo(target.window),
+        display: this._cloneDisplayInfo(target.display),
+        targetType: target.type || 'application'
+      };
+
+      /**
+       * Start event
+       * @event AudioCapture#start
+       * @type {CaptureInfo}
+       */
+      this.emit('start', this._createTargetSnapshot());
+    } else {
+      const error = new AudioCaptureError(
+        target.failureMessage || 'Failed to start capture',
+        ErrorCodes.CAPTURE_FAILED,
+        target.failureDetails || {}
+      );
+      this.emit('error', error);
+      throw error;
+    }
+
+    return success;
+  }
+
+  _handleNativeSample(sample, processIdForActivity = null) {
+    const rms = this._calculateRMS(sample.data);
+    const peak = this._calculatePeak(sample.data);
+
+    if (rms < this.captureOptions.minVolume) {
+      return;
+    }
+
+    let audioData = sample.data;
+    let actualFormat = 'float32';
+
+    if (this.captureOptions.format === 'int16') {
+      audioData = this._convertToInt16(sample.data);
+      actualFormat = 'int16';
+    }
+
+    const bytesPerSample = 4;
+    const totalSamples = sample.data.length / bytesPerSample;
+    const framesCount = totalSamples / sample.channelCount;
+    const durationMs = (framesCount / sample.sampleRate) * 1000;
+
+    const enhancedSample = {
+      data: audioData,
+      sampleRate: sample.sampleRate,
+      channels: sample.channelCount,
+      timestamp: sample.timestamp,
+      format: actualFormat,
+      sampleCount: totalSamples,
+      framesCount,
+      durationMs,
+      rms,
+      peak,
+    };
+
+    this.emit('audio', enhancedSample);
+
+    if (this._activityTrackingEnabled && typeof processIdForActivity === 'number') {
+      const now = Date.now();
+      const existing = this._audioActivityCache.get(processIdForActivity);
+
+      if (existing) {
+        const alpha = 0.1;
+        existing.avgRMS = existing.avgRMS * (1 - alpha) + rms * alpha;
+        existing.lastSeen = now;
+        existing.sampleCount++;
+      } else {
+        this._audioActivityCache.set(processIdForActivity, {
+          lastSeen: now,
+          avgRMS: rms,
+          sampleCount: 1
+        });
+      }
+    }
+  }
+
+  _createTargetSnapshot(target = this._currentTarget) {
+    if (!target) {
+      return null;
+    }
+
+    return {
+      processId: typeof target.processId === 'number' ? target.processId : null,
+      app: this._cloneAppInfo(target.app),
+      window: this._cloneWindowInfo(target.window),
+      display: this._cloneDisplayInfo(target.display),
+      targetType: target.targetType || 'application'
+    };
+  }
+
+  _cloneAppInfo(app) {
+    if (!app) return null;
+    return { ...app };
+  }
+
+  _cloneWindowInfo(window) {
+    if (!window) return null;
+    return {
+      ...window,
+      frame: window.frame ? { ...window.frame } : null
+    };
+  }
+
+  _cloneDisplayInfo(display) {
+    if (!display) return null;
+    return {
+      ...display,
+      frame: display.frame ? { ...display.frame } : null
+    };
+  }
+
+  _assertNativeMethod(methodName, featureDescription) {
+    if (!this.captureKit || typeof this.captureKit[methodName] !== 'function') {
+      throw new AudioCaptureError(
+        `${featureDescription} requires a rebuilt native addon. Reinstall or run \"npm install\" to compile the latest bindings.`,
+        ErrorCodes.CAPTURE_FAILED,
+        { missingMethod: methodName }
+      );
+    }
   }
 
   /**
