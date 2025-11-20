@@ -42,6 +42,8 @@ Capture real-time audio from any macOS application with a simple, event-driven A
 - **[API Reference](#api-reference)**
   - [Class: AudioCapture](#class-audiocapture)
     - [Methods](#methods)
+    - [Window & Display Selection](#window--display-selection)
+    - [Activity Tracking](#enableactivitytrackingoptions-object-void)
     - [Static Methods](#static-methods)
     - [Events](#events)
   - [Error Handling](#error-handling)
@@ -67,6 +69,7 @@ Capture real-time audio from any macOS application with a simple, event-driven A
 - [Architecture](#architecture)
 - [Debugging & Troubleshooting](#debugging--troubleshooting)
 - [Migrating from Older Versions](#migrating-from-older-versions)
+  - [From v1.1.x to v1.2.x](#from-v11x-to-v12x)
 - [Contributing](#contributing)
 - [Changelog](#changelog)
 - [License](#license)
@@ -81,6 +84,7 @@ Capture real-time audio from any macOS application with a simple, event-driven A
 - 🎵 **Per-App Audio Capture** - Isolate audio from specific applications
 - ⚡ **Real-Time Streaming** - Low-latency audio callbacks
 - 🎯 **Dual API Design** - Event-driven or Stream-based (your choice!)
+- 🪟 **Window & Display Targeting** - Capture a single window or full display audio when you need finer control
 - 🌊 **Node.js Streams** - Pipe audio through standard Readable streams
 - 📊 **Audio Analysis** - Built-in RMS, peak, and dB calculations
 - 💾 **WAV File Export** - Simple helper to save audio as standard WAV files
@@ -139,14 +143,13 @@ See `npm ls screencapturekit-audio-capture` for installation location.
 
 ### Version Recommendations
 
-**⚠️ Important:** If using versions prior to 1.1.2, please upgrade immediately.
+- **Recommended:** Use **1.2.x** for the latest features (window/display capture, STT helper streams, activity tracking, modular test suite).
+- **Security/Stability:** If you're on < **1.1.2**, upgrade immediately to fix native buffer handling and multi-channel stability.
 
-Version 1.1.2 fixed critical issues:
-- **Security:** Buffer overflow vulnerability in native audio allocation
-- **Stability:** Planar vs interleaved audio handling crashes
-- **Compatibility:** Multi-channel audio support
-
-Run `npm update screencapturekit-audio-capture` to ensure you have the latest stable version.
+Update with:
+```bash
+npm update screencapturekit-audio-capture
+```
 
 ## Quick Start
 
@@ -447,26 +450,23 @@ const {
 | `AudioCapture` | High-level event-based API | Most users (recommended) |
 | `AudioStream` | Readable stream class | Created via `createAudioStream()` |
 | `STTConverter` | Transform stream for STT | Created via `createSTTStream()` |
-| `ScreenCaptureError`, `ErrorCodes` | Error handling | Type checking, error codes |
+| `AudioCaptureError` | Custom error class with codes/details | Structured error handling |
+| `ErrorCodes` | Machine-readable error codes | Branching without string matching |
 | `ScreenCaptureKit` | Low-level native binding | Advanced users, minimal overhead |
 
 ## Testing
 
 **Note:** Test files are available in the [GitHub repository](https://github.com/mrlionware/screencapturekit-audio-capture) but are not included in the npm package.
 
-When developing or contributing:
+Tests live under `tests/` and use Node's built-in test runner (**Node 18+**). See `tests/README.md` for layout and migration notes.
 
-- ```bash
-  npm test
-  ```
-  Runs the deterministic Node.js test runner against every script in `examples/*.js`. A lightweight harness fakes the ScreenCaptureKit bindings, so these tests run quickly on any platform that has **Node.js 18+** (required for `node --test`).
+- `npm test` — Runs every suite in `tests/**` (unit, integration, examples, edge-cases) against the mocked ScreenCaptureKit layer; works cross-platform.
+- `npm run test:unit` — Fast coverage for utilities, audio metrics, selection, and capture control.
+- `npm run test:integration` — Multi-component flows (window/display capture, activity tracking, capability guards) using the shared mock.
+- `npm run test:examples` — Example validation scaffolding (mirrors the runnable scripts).
+- `npm run test:edge-cases` — Boundary/error handling coverage.
 
-- ```bash
-  npm run test:integration
-  ```
-  Executes `test.js`, which drives the real native addon. Run this on macOS with Screen Recording permission granted to your terminal app to confirm end-to-end audio capture.
-
-If you are on macOS 14/13 with Node 18+, both commands should pass without additional setup beyond `npm install`.
+For true hardware validation, run the example scripts on macOS with Screen Recording permission enabled.
 
 ## Stream-Based API
 
@@ -1013,13 +1013,20 @@ High-level event-based API (recommended).
 
 #### Methods
 
-##### `getApplications(): AppInfo[]`
+##### `getApplications(options?: object): AppInfo[]`
 
-Get list of all capturable applications.
+Get list of all capturable applications. By default, filters out apps with empty names (helper processes).
+
+**Options:**
+- `includeEmpty` (boolean): Include apps with empty `applicationName` (default: `false`)
 
 ```javascript
+// Get all apps (filters empty names by default)
 const apps = capture.getApplications();
 // Returns: [{ processId, bundleIdentifier, applicationName }, ...]
+
+// Include apps with empty names (helper processes, background services)
+const allApps = capture.getApplications({ includeEmpty: true });
 ```
 
 ##### `findApplication(identifier: string): AppInfo | null`
@@ -1042,15 +1049,26 @@ if (app) {
 }
 ```
 
-##### `getAudioApps(): AppInfo[]`
+##### `getAudioApps(options?: object): AppInfo[]`
 
-Get only applications likely to produce audio. Filters out system apps and utilities.
+Get only applications likely to produce audio. Filters out system apps and utilities, and optionally sorts by recent activity.
+
+**Options:**
+- `includeSystemApps` (boolean): Include system apps (default: `false`)
+- `includeEmpty` (boolean): Include apps with empty names (default: `false`)
+- `sortByActivity` (boolean): Sort by recent audio activity (requires `enableActivityTracking()`, default: `false`)
 
 ```javascript
+// Get audio apps (filters system apps and empty names)
 const audioApps = capture.getAudioApps();
 console.log('Audio apps:', audioApps.map(a => a.applicationName));
 // Example output: ['Spotify', 'Safari', 'Music', 'Zoom']
 // (excludes Finder, Terminal, System Preferences, etc.)
+
+// Sort by recent audio activity (shows actively playing apps first)
+capture.enableActivityTracking();
+const activeApps = capture.getAudioApps({ sortByActivity: true });
+// Apps currently producing audio appear first
 ```
 
 
@@ -1064,6 +1082,31 @@ if (app) {
   console.log(`Found ${app.applicationName}`);
 }
 ```
+
+##### Window & Display Selection
+
+Need to capture audio from a single window or an entire display instead of a whole application? Use the new helpers to inspect available targets and start a capture against them:
+
+```javascript
+// List windows (filter to on-screen windows that have a title)
+const windows = capture.getWindows({ onScreenOnly: true, requireTitle: true });
+windows.forEach(win => {
+  console.log(`#${win.windowId}: ${win.title} (${win.owningApplicationName})`);
+});
+
+// Capture a specific window
+const targetWindow = windows.find(win => /Safari/.test(win.owningApplicationName));
+if (targetWindow) {
+  capture.captureWindow(targetWindow.windowId, { format: 'int16' });
+}
+
+// Capture a display (see getDisplays() for IDs)
+const displays = capture.getDisplays();
+const internalDisplay = displays.find(display => display.isMainDisplay);
+capture.captureDisplay(internalDisplay.displayId);
+```
+
+`getWindows()` and `getDisplays()` return the raw ScreenCaptureKit metadata (ID, frame, layer, owning process, etc.) so you can build custom UIs for choosing targets. `captureWindow()` and `captureDisplay()` accept the IDs returned from those helpers and otherwise share the same options as `startCapture()`.
 
 ##### `selectApp(identifiers?: string | number | Array, options?: Object): AppInfo | null`
 
@@ -1093,6 +1136,53 @@ const app = capture.selectApp('spot'); // Finds "Spotify"
 const app = capture.selectApp('Terminal', { audioOnly: false });
 ```
 
+##### `enableActivityTracking(options?: object): void`
+
+Enable background tracking of audio activity for smarter app filtering and sorting.
+
+**Options:**
+- `decayMs` (number): Remove apps from cache after this many ms of inactivity (default: `30000`)
+
+```javascript
+// Enable tracking
+capture.enableActivityTracking();
+
+// Later, get apps sorted by recent audio activity
+const apps = capture.getAudioApps({ sortByActivity: true });
+// Apps currently producing audio appear first
+
+// Custom decay time (remove from cache after 1 minute of silence)
+capture.enableActivityTracking({ decayMs: 60000 });
+```
+
+##### `disableActivityTracking(): void`
+
+Disable activity tracking and clear the cache.
+
+```javascript
+capture.disableActivityTracking();
+```
+
+##### `getActivityInfo(): Object`
+
+Get activity tracking status and statistics about recently active apps.
+
+**Returns:**
+- `enabled` (boolean): Whether tracking is enabled
+- `trackedApps` (number): Number of apps currently in cache
+- `recentApps` (Array): Recently active apps with metadata
+
+```javascript
+const info = capture.getActivityInfo();
+console.log(`Tracking enabled: ${info.enabled}`);
+console.log(`Active apps: ${info.trackedApps}`);
+
+info.recentApps.forEach(app => {
+  console.log(`PID ${app.processId}: avg RMS ${app.avgRMS.toFixed(3)}, ` +
+              `last seen ${app.ageMs}ms ago`);
+});
+```
+
 ##### `AudioCapture.verifyPermissions(): Object` (Static)
 
 Verify screen recording permissions before attempting capture. Returns a status object with remediation steps if permissions are not granted.
@@ -1120,8 +1210,11 @@ Get detailed status of the current capture session. Returns `null` if not captur
 
 **Returns (when capturing):**
 - `capturing` (boolean): Always `true` when not null
-- `processId` (number): Process ID being captured
-- `app` (AppInfo): Application info with `applicationName`, `bundleIdentifier`, `processId`
+- `processId` (number | null): Process ID being captured (may be `null` for display capture)
+- `app` (AppInfo | null): Application info (if available)
+- `window` (WindowInfo | null): Window info when capturing a single window
+- `display` (DisplayInfo | null): Display info when capturing a display
+- `targetType` (`'application' | 'window' | 'display'`): Target kind
 - `config` (Object): Current capture configuration
   - `minVolume` (number): Volume threshold
   - `format` (string): Audio format ('float32' or 'int16')
@@ -1129,8 +1222,16 @@ Get detailed status of the current capture session. Returns `null` if not captur
 ```javascript
 const status = capture.getStatus();
 if (status) {
-  console.log(`Capturing from: ${status.app.applicationName}`);
-  console.log(`Process ID: ${status.processId}`);
+  console.log(`Capturing type: ${status.targetType}`);
+  if (status.app) {
+    console.log(`Application: ${status.app.applicationName}`);
+  }
+  if (status.window) {
+    console.log(`Window: ${status.window.title}`);
+  }
+  if (status.display) {
+    console.log(`Display: ${status.display.displayId}`);
+  }
   console.log(`Format: ${status.config.format}`);
   console.log(`Min volume: ${status.config.minVolume}`);
 } else {
@@ -1239,7 +1340,13 @@ Check if currently capturing.
 
 ##### `getCurrentCapture(): CaptureInfo | null`
 
-Get information about the current capture.
+Get information about the current capture. Returns the same structure emitted with the `start`/`stop` events:
+
+- `targetType`: `'application'`, `'window'`, or `'display'`
+- `processId`: PID backing the capture (if available)
+- `app`: Application info (when available)
+- `window`: Window info when capturing a specific window
+- `display`: Display info when capturing a display
 
 ##### `createAudioStream(appIdentifier: string | number, options?: object): AudioStream`
 
@@ -1570,12 +1677,12 @@ audioStream.stop();
 
 ##### `getCurrentCapture(): CaptureInfo | null`
 
-Get information about the current capture.
+Get information about the current capture (same structure as `AudioCapture#getCurrentCapture`).
 
 ```javascript
 const info = audioStream.getCurrentCapture();
 if (info) {
-  console.log(`Capturing from ${info.app.applicationName}`);
+  console.log(`Target type: ${info.targetType}`);
 }
 ```
 
@@ -1657,8 +1764,12 @@ Full TypeScript support with included definitions:
 ```typescript
 import AudioCapture, {
   AudioStream,
+  STTConverter,
   EnhancedAudioSample,
   AppInfo,
+  WindowInfo,
+  DisplayInfo,
+  CaptureInfo,
   StreamOptions,
   CaptureOptions,
   ErrorCodes,
@@ -1691,6 +1802,11 @@ const app: AppInfo | null = capture.findApplication('Safari');
 if (app) {
   capture.startCapture(app.processId);
 }
+
+// Window/display helpers are fully typed
+const windows: WindowInfo[] = capture.getWindows({ onScreenOnly: true });
+const displays: DisplayInfo[] = capture.getDisplays();
+const status: CaptureInfo | null = capture.getStatus();
 
 // Error handling with types
 capture.on('error', (err: AudioCaptureError) => {
@@ -1942,10 +2058,11 @@ The repository ships with runnable example scripts under [`examples/`](examples/
 **Note:** Examples are available in the [GitHub repository](https://github.com/mrlionware/screencapturekit-audio-capture/tree/main/examples) but are not included in the npm package to reduce installation size.
 
 **Run examples:**
-- `node examples/1-basic-usage.js`
-- `node examples/2-stream-api.js [1-4]`
-- `node examples/3-advanced-config.js [preset]`
+- `node examples/1-basic-usage.js [appName]`
+- `node examples/2-stream-api.js [1-5]`
+- `node examples/3-advanced-config.js [preset] [app|window|display] [...custom]`
 - `node examples/4-finding-apps.js`
+- `node examples/5-stt-integration.js`
 
 See [`examples/README.md`](examples/README.md) for a deeper walkthrough of each scenario.
 
@@ -2461,6 +2578,17 @@ sw_vers
 
 ## Migrating from Older Versions
 
+### From v1.1.x to v1.2.x
+
+**New capabilities:**
+- Window/display capture APIs: `getWindows()`, `getDisplays()`, `captureWindow()`, `captureDisplay()`
+- `createSTTStream()` helper with `STTConverter` for STT-ready Int16/mono streams
+- Activity tracking + smarter selection (`enableActivityTracking()`, `getActivityInfo()`, `selectApp()` fallbacks)
+- Enhanced sample metadata (duration, frame counts, peaks/rms) exposed in object mode and streams
+- Modularized test suite under `tests/` (unit, integration, edge-cases, examples)
+
+**Action:** Update to `^1.2.0`. No breaking changes; older capture calls continue to work, but new helpers simplify configuration.
+
 ### From v1.0.x to v1.1.x
 
 **New Features:**
@@ -2545,11 +2673,14 @@ npm run build
 **Running Tests:**
 
 ```bash
-# Mock tests (cross-platform)
+# Full suite (cross-platform, mocked native)
 npm test
 
-# Integration tests (macOS only, requires permissions)
+# Focused suites
+npm run test:unit
 npm run test:integration
+npm run test:edge-cases
+npm run test:examples
 ```
 
 **Code Structure:**
