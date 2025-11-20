@@ -327,6 +327,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Demonstrates fallback app selection
   - Shows how to access selected app info from stream
 
+## [1.2.3] - 2025-11-20
+
+### Fixed
+- **Critical:** Fixed STTConverter buffer offset bug where `mono.byteOffset` and `frameCount` weren't passed to typed array constructors
+  - Could cause incorrect audio conversion when working with non-zero-based buffers
+  - Now properly passes all three parameters: `buffer`, `byteOffset`, and `length`
+
+### Added - Window and Display Enumeration
+- **`getWindows()` method:** Enumerate all capturable windows
+  - Filter by `onScreenOnly`, `requireTitle`, or `processId` options
+  - Returns window metadata: title, bounds, owning app, on-screen status
+  - Native ScreenCaptureKit integration for accurate window information
+
+- **`getDisplays()` method:** Enumerate all available displays
+  - Returns display metadata: ID, width, height, bounds
+  - Enables multi-monitor capture scenarios
+
+- **Window/Display Capture:** New capture modes beyond just applications
+  - `startCaptureWindow(windowId, options)` - Capture specific window audio
+  - `startCaptureDisplay(displayId, options)` - Capture display audio
+  - Flexible capture targets for advanced use cases
+
+### Added - Activity Tracking
+- **Activity Tracking Infrastructure:** Monitor which apps are actively producing audio
+  - `enableActivityTracking(options)` - Start tracking audio activity
+  - `disableActivityTracking()` - Stop tracking and clear cache
+  - `getActivityInfo()` - Get statistics on tracked apps
+  - Configurable decay time for removing inactive apps from cache
+
+- **Smart App Filtering:** `getAudioApps({ sortByActivity: true })`
+  - Automatically sorts apps by recent audio activity
+  - Apps currently playing audio appear first
+  - Decay-based cleanup removes stale entries
+
+### Added - Enhanced App Discovery
+- **Improved `getApplications()`:** New `includeEmpty` option (default: false)
+  - Filters out helper processes and background services with empty names
+  - Cleaner app lists for better user experience
+  - Set `includeEmpty: true` to get full list including system processes
+
+### Added - Examples and Documentation
+- **New STT Integration Example:** `examples/5-stt-integration.js`
+  - Demonstrates real-world speech-to-text integration
+  - Shows proper use of `createSTTStream()` method
+  - Includes error handling and stream management best practices
+
+- **Enhanced Examples:** Improved all existing examples (1-4)
+  - Better error handling and validation
+  - More detailed inline documentation
+  - Updated examples README
+
+### Added - Test Infrastructure
+- **Comprehensive Test Suite Reorganization:**
+  - Unit tests: `tests/unit/*.test.js` (7 test files)
+  - Integration tests: `tests/integration/*.test.js` (4 test files)
+  - Edge case tests: `tests/edge-cases/*.test.js`
+  - Test fixtures, factories, and assertion helpers
+  - Test template and README for development guidance
+
+- **New Test Scripts:** More granular test execution
+  - `npm run test:unit` - Run unit tests only
+  - `npm run test:integration` - Run integration tests only
+  - `npm run test:examples` - Test example files
+  - `npm run test:edge-cases` - Test edge cases
+  - `npm run test:watch` - Watch mode for development
+
+### Improved - Native Layer
+- **Audio Buffer Processing:** Enhanced planar/interleaved audio handling
+  - More robust buffer allocation and validation
+  - Better handling of multi-channel audio formats
+  - Improved safety checks and error logging
+
+### Improved - TypeScript Definitions
+- **New Interfaces:** `WindowInfo`, `DisplayInfo`, `Rect`
+- **Updated Signatures:** All new methods fully typed
+- **Enhanced Options:** Activity tracking and filtering options typed
+
 ## [Unreleased]
 
 ### Planned
