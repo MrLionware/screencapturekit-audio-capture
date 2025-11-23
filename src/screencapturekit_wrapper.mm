@@ -220,6 +220,8 @@ bool StartStreamWithFilter(WrapperImpl *wrapper, SCContentFilter *filter, const 
         return false;
     }
 
+
+
     wrapper->objcImpl.contentFilter = filter;
 
     SCStreamConfiguration *streamConfig = [[SCStreamConfiguration alloc] init];
@@ -261,7 +263,9 @@ bool StartStreamWithFilter(WrapperImpl *wrapper, SCContentFilter *filter, const 
         return false;
     }
 
+    // Wait for startCapture completion with timeout to handle macOS 26 beta hangs
     __block bool success = false;
+    __block bool completed = false;
     dispatch_semaphore_t startSemaphore = dispatch_semaphore_create(0);
 
     [stream startCaptureWithCompletionHandler:^(NSError * _Nullable error) {
@@ -277,10 +281,25 @@ bool StartStreamWithFilter(WrapperImpl *wrapper, SCContentFilter *filter, const 
             wrapper->objcImpl.isCapturing = YES;
             success = true;
         }
+        completed = true;
         dispatch_semaphore_signal(startSemaphore);
     }];
 
-    dispatch_semaphore_wait(startSemaphore, DISPATCH_TIME_FOREVER);
+    // Wait up to 10 seconds for the completion handler
+    long waitResult = dispatch_semaphore_wait(startSemaphore, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+
+    if (waitResult != 0) {
+        // Timeout - likely macOS 15+ bug where startCaptureWithCompletionHandler never completes
+        NSLog(@"Timeout waiting for capture to start (10s). This may indicate a macOS 15+ ScreenCaptureKit bug.");
+        if (!completed) {
+            // If still not completed after timeout, clean up
+            wrapper->objcImpl.isCapturing = NO;
+            wrapper->objcImpl.stream = nil;
+            wrapper->objcImpl.delegate = nil;
+            wrapper->objcImpl.contentFilter = nil;
+        }
+        return false;
+    }
 
     return success;
 }
