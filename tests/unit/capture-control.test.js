@@ -64,6 +64,36 @@ test('Capture Control', async (t) => {
       capture.stopCapture();
     });
 
+    await t.test('should accept app object directly to bypass lookup', () => {
+      let startCaptureCalledWith = null;
+
+      const mockNative = {
+        ScreenCaptureKit: class {
+          getAvailableApps() {
+            return MOCK_APPS;
+          }
+          startCapture(pid, config, callback) {
+            startCaptureCalledWith = { pid, config };
+            return true;
+          }
+          stopCapture() {}
+        }
+      };
+
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      // Pass app object directly (e.g., from verifyPermissions or selectApp)
+      const appObject = { processId: 200, bundleIdentifier: 'com.example.music', applicationName: 'Music Player' };
+      const success = capture.startCapture(appObject);
+
+      assert.equal(success, true);
+      assert.equal(capture.isCapturing(), true);
+      assert.equal(startCaptureCalledWith.pid, 200, 'Should use processId from app object');
+
+      capture.stopCapture();
+    });
+
     await t.test('should fail when already capturing', () => {
       let capturedCallback = null;
 

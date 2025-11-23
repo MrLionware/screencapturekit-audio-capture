@@ -72,7 +72,11 @@ test('Example Integration Tests', async (t) => {
         const capture = AudioCaptureMock.instances[0];
         assert.ok(capture, 'Capture instance should be created');
         assert.equal(capture.startCalls.length, 1);
-        assert.equal(capture.startCalls[0].identifier, exampleMockApps[0].applicationName);
+        const startedIdentifier = capture.startCalls[0].identifier;
+        const startedName = typeof startedIdentifier === 'object'
+          ? startedIdentifier.applicationName
+          : startedIdentifier;
+        assert.equal(startedName, exampleMockApps[0].applicationName);
         assert.equal(capture.startCalls[0].options.minVolume, 0.01);
 
         // Emit a few audio samples to simulate capture output

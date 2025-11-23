@@ -192,6 +192,51 @@ test('Application Selection', async (t) => {
       const app2 = capture.selectApp('Finder', { audioOnly: false });
       assert.equal(app2.applicationName, 'Finder');
     });
+
+    await t.test('should use prefetched appList to avoid redundant native calls', () => {
+      const mockNative = createNativeMock({ apps: MOCK_APPS });
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      // Prefetch app list
+      const appList = capture.getAudioApps();
+
+      // Reset call counter
+      mockNative.getApplicationsCalls = 0;
+
+      // Use prefetched list - should not call native layer again
+      const app = capture.selectApp('Music Player', { appList });
+
+      assert.equal(app.applicationName, 'Music Player');
+      assert.equal(mockNative.getApplicationsCalls, 0, 'Should not call getApplications when appList provided');
+    });
+
+    await t.test('should fallback to first app when fallbackToFirst=true and no match', () => {
+      const mockNative = createNativeMock({ apps: MOCK_APPS });
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      // Without fallback - returns null
+      const app1 = capture.selectApp('NonExistent');
+      assert.equal(app1, null);
+
+      // With fallback - returns first audio app
+      const app2 = capture.selectApp('NonExistent', { fallbackToFirst: true });
+      assert.ok(app2);
+      assert.equal(app2.processId, 100);
+    });
+
+    await t.test('should use appList with fallbackToFirst', () => {
+      const mockNative = createNativeMock({ apps: MOCK_APPS });
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      const appList = capture.getAudioApps();
+      const app = capture.selectApp('NonExistent', { appList, fallbackToFirst: true });
+
+      assert.ok(app);
+      assert.equal(app.processId, 100);
+    });
   });
 
   await t.test('getAudioApps()', async (t) => {
@@ -224,6 +269,45 @@ test('Application Selection', async (t) => {
 
       assert.ok(!apps.find(a => a.processId === 400));
       assert.ok(!apps.find(a => a.processId === 500));
+    });
+
+    await t.test('should accept prefetched appList to avoid redundant calls', () => {
+      const mockNative = createNativeMock({ apps: MOCK_APPS });
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      // Get apps from verifyPermissions (simulating real use case)
+      const permStatus = AudioCapture.verifyPermissions();
+      const prefetchedApps = permStatus.apps;
+
+      // Reset call counter
+      mockNative.getApplicationsCalls = 0;
+
+      // Use prefetched list
+      const audioApps = capture.getAudioApps({ appList: prefetchedApps });
+
+      assert.equal(mockNative.getApplicationsCalls, 0, 'Should not call getApplications when appList provided');
+      assert.ok(audioApps.length > 0);
+      assert.ok(!audioApps.find(a => a.applicationName === 'Finder')); // System apps still filtered
+    });
+
+    await t.test('should filter Helper and AutoFill processes', () => {
+      const appsWithHelpers = [
+        { processId: 1, bundleIdentifier: 'com.example.App', applicationName: 'Example App' },
+        { processId: 2, bundleIdentifier: 'com.example.App.Helper', applicationName: 'Example App Helper' },
+        { processId: 3, bundleIdentifier: 'com.apple.Safari.AutoFill', applicationName: 'Safari AutoFill' },
+        { processId: 4, bundleIdentifier: 'com.spotify.client', applicationName: 'Spotify' }
+      ];
+
+      const mockNative = createNativeMock({ apps: appsWithHelpers });
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+      const apps = capture.getAudioApps();
+
+      assert.ok(apps.find(a => a.applicationName === 'Example App'));
+      assert.ok(apps.find(a => a.applicationName === 'Spotify'));
+      assert.ok(!apps.find(a => a.bundleIdentifier.includes('Helper')));
+      assert.ok(!apps.find(a => a.bundleIdentifier.includes('AutoFill')));
     });
   });
 

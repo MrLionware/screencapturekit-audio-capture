@@ -270,13 +270,21 @@ function createAudioCaptureMock(options = {}) {
     }
 
     getAudioApps(opts = {}) {
+      const source = Array.isArray(opts.appList) ? opts.appList : null;
+      const list = source || this.audioApps;
+
+      // Simulate "apps visible but none audio-capable" by honoring an empty audioApps list
+      if (source && this.audioApps.length === 0 && !opts.includeSystemApps) {
+        return [];
+      }
+
       if (opts.includeSystemApps) {
-        return [...this.apps];
+        return [...(source || this.apps)];
       }
       if (opts.includeEmpty) {
-        return [...this.audioApps];
+        return [...list];
       }
-      return this.audioApps.filter(app => app.applicationName && app.applicationName.trim().length > 0);
+      return list.filter(app => app.applicationName && app.applicationName.trim().length > 0);
     }
 
     getWindows(options = {}) {
@@ -314,8 +322,10 @@ function createAudioCaptureMock(options = {}) {
     }
 
     selectApp(identifiers = null, opts = {}) {
-      const { audioOnly = true, throwOnNotFound = false } = opts;
-      const candidates = audioOnly ? this.getAudioApps() : this.getApplications();
+      const { audioOnly = true, throwOnNotFound = false, appList = null, fallbackToFirst = false } = opts;
+      const candidates = appList
+        ? (audioOnly ? this.getAudioApps({ appList }) : [...appList])
+        : (audioOnly ? this.getAudioApps() : this.getApplications());
       const hasIdentifiers = identifiers !== null && identifiers !== undefined;
       const normalized = Array.isArray(identifiers)
         ? identifiers
@@ -340,6 +350,13 @@ function createAudioCaptureMock(options = {}) {
         if (partial) return partial;
       }
 
+      if (!hasIdentifiers && fallbackToFirst && candidates.length > 0) {
+        return candidates[0];
+      }
+      if (fallbackToFirst && candidates.length > 0) {
+        return candidates[0];
+      }
+
       if (throwOnNotFound) {
         throw new Error('Mock selectApp could not find requested app');
       }
@@ -347,13 +364,19 @@ function createAudioCaptureMock(options = {}) {
     }
 
     startCapture(identifier, captureOptions = {}) {
-      const processId = typeof identifier === 'number'
-        ? identifier
-        : this.findApplication(identifier)?.processId;
+      let processId;
+      let targetApp;
 
-      const targetApp = typeof identifier === 'number'
-        ? this.getApplicationByPid(identifier)
-        : this.findApplication(identifier);
+      if (typeof identifier === 'object' && identifier && typeof identifier.processId === 'number') {
+        processId = identifier.processId;
+        targetApp = identifier;
+      } else if (typeof identifier === 'number') {
+        processId = identifier;
+        targetApp = this.getApplicationByPid(identifier);
+      } else {
+        processId = this.findApplication(identifier)?.processId;
+        targetApp = this.findApplication(identifier);
+      }
 
       const target = {
         type: 'application',
@@ -559,7 +582,8 @@ function createAudioCaptureMock(options = {}) {
   MockAudioCapture.verifyPermissions = () => ({
     granted: true,
     message: `Mock permission granted (${apps.length} apps visible)`,
-    availableApps: apps.length
+    availableApps: apps.length,
+    apps: [...apps]
   });
 
   MockAudioCapture.writeWav = (buffer, wavOptions) => {

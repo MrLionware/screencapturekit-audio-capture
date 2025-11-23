@@ -47,6 +47,24 @@ test('Permission Verification', async (t) => {
       assert.equal(status.granted, true);
       assert.equal(status.availableApps, 3);
     });
+
+    await t.test('should return apps list for reuse to avoid redundant calls', () => {
+      const mockNativeGranted = {
+        ScreenCaptureKit: class {
+          getAvailableApps() {
+            return MOCK_APPS;
+          }
+        }
+      };
+
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNativeGranted });
+      const status = AudioCapture.verifyPermissions();
+      assert.equal(status.granted, true);
+      assert.ok(Array.isArray(status.apps), 'Should return apps array');
+      assert.equal(status.apps.length, 3);
+      assert.equal(status.apps[0].processId, 100);
+      assert.equal(status.apps[0].applicationName, 'Example App');
+    });
   });
 
   await t.test('From AudioCapture Utilities', async (t) => {
