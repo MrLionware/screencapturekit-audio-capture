@@ -1057,18 +1057,24 @@ Get only applications likely to produce audio. Filters out system apps and utili
 - `includeSystemApps` (boolean): Include system apps (default: `false`)
 - `includeEmpty` (boolean): Include apps with empty names (default: `false`)
 - `sortByActivity` (boolean): Sort by recent audio activity (requires `enableActivityTracking()`, default: `false`)
+- `appList` (Array): Use a prefetched app list instead of calling `getApplications()` (default: `null`)
 
 ```javascript
 // Get audio apps (filters system apps and empty names)
 const audioApps = capture.getAudioApps();
 console.log('Audio apps:', audioApps.map(a => a.applicationName));
 // Example output: ['Spotify', 'Safari', 'Music', 'Zoom']
-// (excludes Finder, Terminal, System Preferences, etc.)
+// (excludes Finder, Terminal, System Preferences, AutoFill helpers, etc.)
 
 // Sort by recent audio activity (shows actively playing apps first)
 capture.enableActivityTracking();
 const activeApps = capture.getAudioApps({ sortByActivity: true });
 // Apps currently producing audio appear first
+
+// Reuse prefetched app list to avoid redundant native calls
+const permissionStatus = AudioCapture.verifyPermissions();
+const audioApps = capture.getAudioApps({ appList: permissionStatus.apps });
+// More efficient - reuses apps from permission check
 ```
 
 
@@ -1115,6 +1121,9 @@ Smart app selection with multiple fallback strategies. Tries exact name, PID, bu
 **Parameters:**
 - `identifiers` - App name, PID, bundle ID, or array to try in order. `null`/`undefined` returns first audio app
 - `options.audioOnly` (boolean) - Only search audio apps (default: `true`)
+- `options.appList` (Array) - Prefetched app list to reuse (e.g., from `verifyPermissions()`) to avoid re-fetching (default: `null`)
+- `options.fallbackToFirst` (boolean) - Return the first available app if no identifier matches (default: `false`)
+- `options.sortByActivity` (boolean) - Sort using recent audio activity (requires `enableActivityTracking()`, default: `false`)
 - `options.throwOnNotFound` (boolean) - Throw error if no app found (default: `false`)
 
 **Returns:** Application info or `null` (unless `throwOnNotFound` is `true`)
@@ -1134,6 +1143,20 @@ const app = capture.selectApp('spot'); // Finds "Spotify"
 
 // Include system apps
 const app = capture.selectApp('Terminal', { audioOnly: false });
+
+// Reuse prefetched app list for efficiency
+const permissionStatus = AudioCapture.verifyPermissions();
+const app = capture.selectApp(['Spotify', 'Music'], {
+  appList: permissionStatus.apps,
+  fallbackToFirst: true // Use first available if none match
+});
+
+// With activity tracking for smart selection
+capture.enableActivityTracking();
+const app = capture.selectApp(['Spotify', 'Music'], {
+  sortByActivity: true, // Prefer apps currently playing audio
+  fallbackToFirst: true
+});
 ```
 
 ##### `enableActivityTracking(options?: object): void`
@@ -1190,6 +1213,7 @@ Verify screen recording permissions before attempting capture. Returns a status 
 **Returns:**
 - `granted` (boolean): Whether permission is granted
 - `message` (string): Human-readable status message
+- `apps` (Array, optional): Prefetched application list you can reuse for selection (if granted)
 - `remediation` (string, optional): Instructions to fix permission issues
 - `availableApps` (number, optional): Number of apps found (if granted)
 
@@ -1201,6 +1225,13 @@ if (!status.granted) {
   process.exit(1);
 } else {
   console.log(status.message); // "Screen Recording permission granted. Found X applications."
+
+  // Reuse the prefetched app list to avoid redundant native calls
+  const audioApps = capture.getAudioApps({ appList: status.apps });
+  const selectedApp = capture.selectApp(['Spotify', 'Music'], {
+    appList: status.apps,
+    fallbackToFirst: true
+  });
 }
 ```
 
@@ -1239,9 +1270,9 @@ if (status) {
 }
 ```
 
-##### `startCapture(appIdentifier: string | number, options?: object): boolean`
+##### `startCapture(appIdentifier: string | number | Object, options?: object): boolean`
 
-Start capturing audio. Accepts app name, bundle ID, or process ID.
+Start capturing audio. Accepts app name, bundle ID, process ID, or an app object (from `getApplications()` or `selectApp()`).
 
 **Throws:** `AudioCaptureError` with code and details if capture fails (permission denied, app not found, etc.). Always emits the error event before throwing.
 
@@ -1268,6 +1299,10 @@ Start capturing audio. Accepts app name, bundle ID, or process ID.
 capture.startCapture('Music');                    // By name
 capture.startCapture('com.spotify.client');       // By bundle ID
 capture.startCapture(12345);                      // By PID
+
+// Pass app object directly (avoids redundant lookups)
+const app = capture.selectApp(['Spotify', 'Music']);
+capture.startCapture(app);                        // By app object
 
 // With volume threshold (only emit when audio is present)
 capture.startCapture('Spotify', { minVolume: 0.01 });
@@ -2051,6 +2086,20 @@ capture.on('audio', (sample) => {
 **Error: "ScreenCaptureKit framework not found"**
 - Solution: Update to macOS 13.0+ (ScreenCaptureKit not available on older versions)
 
+### Capture timeout errors (macOS 15+)
+
+**Symptom:** Capture fails with timeout error after 10 seconds on macOS 15 (Sequoia) or later
+
+**Cause:** This is a known bug in macOS 15+ ScreenCaptureKit where `startCaptureWithCompletionHandler` never completes when audio capture is enabled. The SDK includes a 10-second timeout to prevent indefinite hangs.
+
+**Solutions:**
+1. **Try a different application** - Some apps may work better than others
+2. **Restart the target application** - Sometimes helps reset ScreenCaptureKit state
+3. **Check for macOS updates** - Apple may fix this in future updates
+4. **Consider downgrading to macOS 14** - If possible and this is blocking your use case
+
+**Note:** This is a system-level macOS bug, not an issue with this package. The 10-second timeout prevents your application from hanging indefinitely while waiting for ScreenCaptureKit to respond.
+
 ## Examples
 
 The repository ships with runnable example scripts under [`examples/`](examples/README.md) that mirror the snippets below.
@@ -2387,6 +2436,7 @@ While stereo (2 channels) is default and recommended, the system supports up to 
 
 | macOS Version | ScreenCaptureKit | Audio Capture | Notes |
 |---------------|------------------|---------------|-------|
+| macOS 15+ (Sequoia) | ⚠️ Known issues | ✅ Supported with timeout | 10s timeout added for capture start hangs |
 | macOS 14+ (Sonoma) | ✅ Full | ✅ Fully tested | Recommended |
 | macOS 13+ (Ventura) | ✅ Full | ✅ Supported | Minimum required version |
 | macOS 12.x (Monterey) | ⚠️ Limited | ❌ No audio API | Screen capture only, no audio |
@@ -2396,6 +2446,10 @@ While stereo (2 channels) is default and recommended, the system supports up to 
 **Why macOS 13.0+?**
 
 ScreenCaptureKit's audio capture APIs were introduced in macOS 13.0 (Ventura). Earlier versions of the framework don't support per-application audio isolation.
+
+**macOS 15+ Known Issues:**
+
+On macOS 15 (Sequoia) and later, ScreenCaptureKit has a known bug where `startCaptureWithCompletionHandler` may never complete when audio capture is enabled. This SDK includes a 10-second timeout to prevent indefinite hangs. If you experience timeout errors on macOS 15+, this is a system-level bug, not an issue with this package.
 
 ## Performance
 
