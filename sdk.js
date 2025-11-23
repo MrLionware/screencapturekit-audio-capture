@@ -61,6 +61,7 @@ class AudioStream extends Readable {
     this._captureOptions = captureOptions;
     this._objectMode = objectMode;
     this._started = false;
+    this._stopped = false;
     this._audioHandler = null;
     this._errorHandler = null;
     this._stopHandler = null;
@@ -77,6 +78,11 @@ class AudioStream extends Readable {
 
       // Set up event handlers
       this._audioHandler = (sample) => {
+        // Ignore late events after stream ended/stopped
+        if (this.readableEnded || this.destroyed || this._stopped) {
+          return;
+        }
+
         // Push sample data to the stream
         // In object mode, push the entire sample object
         // In normal mode, push just the raw audio buffer
@@ -94,6 +100,9 @@ class AudioStream extends Readable {
       };
 
       this._stopHandler = () => {
+        if (this.readableEnded || this.destroyed || this._stopped) {
+          return;
+        }
         // Capture stopped externally, end the stream
         this.push(null);
       };
@@ -149,6 +158,26 @@ class AudioStream extends Readable {
    * Stop the stream and underlying capture
    */
   stop() {
+    if (this._stopped) {
+      return;
+    }
+
+    this._stopped = true;
+
+    // Detach handlers early to avoid pushing after EOF
+    if (this._audioHandler) {
+      this._capture.removeListener('audio', this._audioHandler);
+      this._capture.removeListener('error', this._errorHandler);
+      this._capture.removeListener('stop', this._stopHandler);
+      this._audioHandler = null;
+      this._errorHandler = null;
+      this._stopHandler = null;
+    }
+
+    if (this._capture.isCapturing()) {
+      this._capture.stopCapture();
+    }
+
     this.push(null); // Signal end of stream
   }
 }
@@ -169,7 +198,12 @@ class STTConverter extends Transform {
   constructor(options = {}) {
     const { format = 'int16', channels = 1, objectMode = false } = options;
 
-    super({ objectMode });
+    // Input side (writable) always accepts objects from AudioStream
+    // Output side (readable) respects the objectMode parameter
+    super({
+      writableObjectMode: true,
+      readableObjectMode: objectMode
+    });
 
     this.targetFormat = format;
     this.targetChannels = channels;
@@ -210,7 +244,7 @@ class STTConverter extends Transform {
     } else {
       const stereo = new Float32Array(buffer.buffer, buffer.byteOffset, buffer.length / 4);
       const monoView = new Float32Array(mono.buffer, mono.byteOffset, frameCount);
-      
+
       for (let i = 0; i < frameCount; i++) {
         monoView[i] = (stereo[i * 2] + stereo[i * 2 + 1]) / 2;
       }
@@ -221,12 +255,15 @@ class STTConverter extends Transform {
 
   _transform(chunk, encoding, callback) {
     try {
-      // Handle both object mode (full sample) and buffer mode
-      const sample = this._objectMode ? chunk : {
-        data: chunk,
-        format: 'float32',
-        channels: 2 // Assume stereo if not in object mode
-      };
+      // Handle both object input (from AudioStream) and buffer input (for testing/flexibility)
+      // Check if chunk has a 'data' property to determine if it's an object or buffer
+      const sample = (chunk && typeof chunk === 'object' && chunk.data !== undefined)
+        ? chunk
+        : {
+          data: chunk,
+          format: 'float32',
+          channels: 2
+        };
 
       let data = sample.data;
       let currentFormat = sample.format || 'float32';
@@ -377,19 +414,52 @@ class AudioCapture extends EventEmitter {
    * @param {boolean} [options.includeSystemApps=false] - If true, returns all apps (same as getApplications())
    * @param {boolean} [options.includeEmpty=false] - Include apps with empty applicationName
    * @param {boolean} [options.sortByActivity=false] - Sort by recent audio activity (requires enableActivityTracking())
+    * @param {Array} [options.appList] - Use a prefetched app list instead of calling getApplications()
    * @returns {Array<{processId: number, bundleIdentifier: string, applicationName: string}>}
    */
   getAudioApps(options = {}) {
-    const { includeSystemApps = false, includeEmpty = false, sortByActivity = false } = options;
-    const apps = this.getApplications({ includeEmpty });
+    const {
+      includeSystemApps = false,
+      includeEmpty = false,
+      sortByActivity = false,
+      appList = null
+    } = options;
+    const apps = Array.isArray(appList) ? appList : this.getApplications({ includeEmpty });
+    return this._filterAudioAppList(apps, { includeSystemApps, includeEmpty, sortByActivity });
+  }
 
-    let filtered;
+  /**
+   * Internal helper to filter/sort an app list down to likely audio sources
+   * Accepts prefetched app lists so callers can avoid redundant native queries
+   * @param {Array} apps - Raw list of apps (e.g., from verifyPermissions or getApplications)
+   * @param {Object} options - Filter options
+   * @param {boolean} options.includeSystemApps - Return all apps when true
+   * @param {boolean} options.includeEmpty - Keep entries without names/bundle IDs when true
+   * @param {boolean} options.sortByActivity - Sort using recent audio activity when tracking is enabled
+   * @returns {Array} Filtered/sorted app list
+   */
+  _filterAudioAppList(apps, options = {}) {
+    const {
+      includeSystemApps = false,
+      includeEmpty = false,
+      sortByActivity = false
+    } = options;
 
-    // If includeSystemApps is true, return all apps
-    if (includeSystemApps) {
-      filtered = apps;
-    } else {
-      // Common system/utility apps that typically don't have audio
+    if (!Array.isArray(apps)) {
+      return [];
+    }
+
+    let filtered = includeEmpty
+      ? [...apps]
+      : apps.filter(app =>
+        app &&
+        app.applicationName &&
+        app.applicationName.trim().length > 0 &&
+        app.bundleIdentifier &&
+        app.bundleIdentifier.trim().length > 0
+      );
+
+    if (!includeSystemApps) {
       const excludePatterns = [
         /^finder$/i,
         /^system/i,
@@ -413,29 +483,42 @@ class AudioCapture extends EventEmitter {
         /^font book$/i,
       ];
 
-      filtered = apps.filter(app => {
-        const name = app.applicationName;
-        return !excludePatterns.some(pattern => pattern.test(name));
+      filtered = filtered.filter(app => {
+        const name = app.applicationName || '';
+        const bundleId = app.bundleIdentifier || '';
+
+        if (excludePatterns.some(pattern => pattern.test(name))) {
+          return false;
+        }
+
+        // Exclude helper/background processes that typically aren't audio sources
+        if (bundleId.includes('AutoFill')) return false;
+        if (bundleId.includes('.Helper')) return false;
+        if (bundleId.includes('PlatformSupport')) return false;
+        if (bundleId.includes('.xpc.')) return false; // XPC services
+        if (name.toLowerCase().includes('autofill')) return false;
+        if (name.includes('(') && name.includes(')')) {
+          // Filter out processes with parentheses like "Service Name (Parent App)"
+          // These are typically helper processes, not the main app
+          return false;
+        }
+
+        return true;
       });
 
-      // If filtering resulted in empty array, provide helpful guidance
       if (filtered.length === 0 && apps.length > 0) {
-        // Add a helpful property to indicate fallback is available
         filtered._hint = 'No audio apps found after filtering. Try getAudioApps({ includeSystemApps: true }) or getApplications() to see all apps.';
       }
     }
 
-    // Sort by recent audio activity if requested and tracking is enabled
     if (sortByActivity && this._activityTrackingEnabled) {
       const now = Date.now();
-      // Clean up stale entries
       for (const [pid, activity] of this._audioActivityCache.entries()) {
         if (now - activity.lastSeen > this._activityDecayMs) {
           this._audioActivityCache.delete(pid);
         }
       }
 
-      // Sort by last seen time (most recent first)
       filtered.sort((a, b) => {
         const aActivity = this._audioActivityCache.get(a.processId);
         const bActivity = this._audioActivityCache.get(b.processId);
@@ -464,6 +547,9 @@ class AudioCapture extends EventEmitter {
    * @param {string|number|string[]} identifiers - App identifier(s) to try in order
    * @param {Object} options - Selection options
    * @param {boolean} [options.audioOnly=true] - Only search audio apps (excludes system apps)
+   * @param {Array} [options.appList] - Prefetched app list to reuse (e.g., from verifyPermissions()) to avoid re-fetching
+   * @param {boolean} [options.fallbackToFirst=false] - Return the first available app if no identifier matches
+   * @param {boolean} [options.sortByActivity=false] - Sort using recent audio activity (requires enableActivityTracking)
    * @param {boolean} [options.throwOnNotFound=false] - Throw error if no app found (default: return null)
    * @returns {Object|null} Application info or null if not found (unless throwOnNotFound is true)
    * @throws {AudioCaptureError} If throwOnNotFound is true and no app found
@@ -478,10 +564,22 @@ class AudioCapture extends EventEmitter {
    * const app = capture.selectApp();
    */
   selectApp(identifiers = null, options = {}) {
-    const { audioOnly = true, throwOnNotFound = false } = options;
+    const {
+      audioOnly = true,
+      throwOnNotFound = false,
+      appList = null,
+      fallbackToFirst = false,
+      sortByActivity = false
+    } = options;
 
-    // Get app list once
-    const apps = audioOnly ? this.getAudioApps() : this.getApplications();
+    let apps;
+    if (Array.isArray(appList)) {
+      apps = audioOnly
+        ? this._filterAudioAppList(appList, { includeSystemApps: false, includeEmpty: false, sortByActivity })
+        : [...appList];
+    } else {
+      apps = audioOnly ? this.getAudioApps({ sortByActivity }) : this.getApplications();
+    }
 
     // If no identifiers provided or empty array, return first audio app
     if (!identifiers || (Array.isArray(identifiers) && identifiers.length === 0)) {
@@ -547,6 +645,10 @@ class AudioCapture extends EventEmitter {
 
     // If no valid identifiers were provided (all empty/whitespace), return first app
     if (!hasValidIdentifier && apps.length > 0) {
+      return apps[0];
+    }
+
+    if (fallbackToFirst && apps.length > 0) {
       return apps[0];
     }
 
@@ -636,6 +738,7 @@ class AudioCapture extends EventEmitter {
    * @returns {Object} Permission status object
    * @returns {boolean} return.granted - Whether permission is granted
    * @returns {string} return.message - Human-readable status message
+   * @returns {Array} [return.apps] - Prefetched application list you can reuse for selection
    * @returns {string} [return.remediation] - Instructions to fix permission issues
    * @example
    * const status = AudioCapture.verifyPermissions();
@@ -664,7 +767,8 @@ class AudioCapture extends EventEmitter {
     return {
       granted: true,
       message: `Screen Recording permission granted. Found ${apps.length} available application(s).`,
-      availableApps: apps.length
+      availableApps: apps.length,
+      apps: apps // Return the apps list so callers can reuse it
     };
   }
 
@@ -788,13 +892,17 @@ class AudioCapture extends EventEmitter {
         this.emit('error', error);
         throw error;
       }
+    } else if (typeof appIdentifier === 'object' && appIdentifier !== null && appIdentifier.processId) {
+      // Allow passing an app object directly (e.g., from getApplications())
+      processId = appIdentifier.processId;
+      appInfo = appIdentifier; // Use the provided app object directly
     } else {
       const error = new AudioCaptureError(
-        'Invalid appIdentifier. Must be string or number.',
+        'Invalid appIdentifier. Must be string, number, or app object with processId.',
         ErrorCodes.INVALID_ARGUMENT,
         {
           receivedType: typeof appIdentifier,
-          expectedTypes: ['string', 'number']
+          expectedTypes: ['string', 'number', 'object with processId']
         }
       );
       this.emit('error', error);
@@ -1243,10 +1351,14 @@ class AudioCapture extends EventEmitter {
        */
       this.emit('start', this._createTargetSnapshot());
     } else {
+      const macOSHangHint = 'If you are testing on macOS 15+, ScreenCaptureKit may never call startCaptureWithCompletionHandler when capturesAudio=true. The native layer now times out instead of hanging indefinitely.';
       const error = new AudioCaptureError(
         target.failureMessage || 'Failed to start capture',
         ErrorCodes.CAPTURE_FAILED,
-        target.failureDetails || {}
+        {
+          ...(target.failureDetails || {}),
+          hint: macOSHangHint
+        }
       );
       this.emit('error', error);
       throw error;
