@@ -5,6 +5,8 @@
 *.swp
 *.swo
 *~
+docs/
+.claude
 
 # Build artifacts (will be rebuilt on user's machine)
 build/

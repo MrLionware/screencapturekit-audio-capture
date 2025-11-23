@@ -2,8 +2,9 @@
 build/
 *.node
 
-# My Claude reports
 docs/
+.claude
+
 
 # Dependencies
 node_modules/
