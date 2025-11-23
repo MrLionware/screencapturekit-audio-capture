@@ -13,6 +13,7 @@
 const AudioCapture = require('../sdk');
 const { pipeline, Transform } = require('stream');
 const fs = require('fs');
+const path = require('path');
 
 const capture = new AudioCapture();
 
@@ -156,17 +157,52 @@ function examplePipeline() {
   });
 
   const filename = `stream-capture-${Date.now()}.wav`;
+  const filePath = path.join(process.cwd(), filename);
   const chunks = [];
+  let finalized = false;
 
-  // Collect chunks to write WAV header at the end
-  const collector = new Transform({
-    transform(chunk, encoding, callback) {
+  const finalize = (source) => {
+    if (finalized) return;
+    finalized = true;
+
+    if (chunks.length === 0) {
+      console.warn('⚠ No audio chunks captured—WAV will be empty. Is the target app playing audio?');
+    }
+
+    const combinedBuffer = Buffer.concat(chunks);
+
+    const wavBuffer = AudioCapture.writeWav(combinedBuffer, {
+      sampleRate: 48000,
+      channels: 2,
+      format: 'float32'
+    });
+
+    fs.writeFileSync(filename, wavBuffer);
+
+    console.log(`\n✓ Saved to ${filename} (via ${source})`);
+    console.log(`  Path: ${filePath}`);
+    console.log(`  Size: ${(wavBuffer.length / 1024).toFixed(1)} KB`);
+
+    process.exit(0);
+  };
+
+  let firstChunkLogged = false;
+
+  // Collect chunks to write WAV header at the end (Writable to avoid backpressure when unconsumed)
+  const collector = new (require('stream')).Writable({
+    write(chunk, encoding, callback) {
       chunks.push(chunk);
-      this.push(chunk);
+      if (!firstChunkLogged) {
+        console.log(`✓ Received first chunk (${chunk.length} bytes)`);
+        firstChunkLogged = true;
+      }
       callback();
     },
-    flush(callback) {
+    final(callback) {
       console.log(`\n✓ Collected ${chunks.length} chunks`);
+      if (chunks.length === 0) {
+        console.warn('⚠ No audio chunks captured—file will contain only WAV headers.');
+      }
       callback();
     }
   });
@@ -180,24 +216,18 @@ function examplePipeline() {
         console.error(`❌ Pipeline failed: ${err.message}`);
         process.exit(1);
       } else {
-        // Create WAV file from collected chunks
-        const combinedBuffer = Buffer.concat(chunks);
-
-        const wavBuffer = AudioCapture.writeWav(combinedBuffer, {
-          sampleRate: 48000,
-          channels: 2,
-          format: 'float32'
-        });
-
-        fs.writeFileSync(filename, wavBuffer);
-
-        console.log(`✓ Saved to ${filename}`);
-        console.log(`  Size: ${(wavBuffer.length / 1024).toFixed(1)} KB`);
-
-        process.exit(0);
+        finalize('pipeline callback');
       }
     }
   );
+
+  // Extra safety: finalize on end/close in case pipeline callback is skipped
+  collector.on('finish', () => finalize('collector finish'));
+  audioStream.on('end', () => finalize('audioStream end'));
+  audioStream.on('close', () => finalize('audioStream close'));
+  audioStream.on('error', (err) => {
+    console.error(`❌ Stream error: ${err.message}`);
+  });
 
   setTimeout(() => {
     console.log('⏱  3 seconds elapsed, stopping...\n');

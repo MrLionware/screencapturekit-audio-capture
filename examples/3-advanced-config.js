@@ -10,6 +10,15 @@
 
 const AudioCapture = require('../sdk');
 
+const permissionStatus = AudioCapture.verifyPermissions();
+if (!permissionStatus.granted) {
+  console.error('❌ Screen Recording permission not granted.');
+  if (permissionStatus.remediation) {
+    console.error(permissionStatus.remediation);
+  }
+  process.exit(1);
+}
+
 const capture = new AudioCapture();
 
 console.log('=== Advanced Configuration & Targeting ===\n');
@@ -82,7 +91,20 @@ switch (preset) {
     process.exit(0);
 }
 
-const selectedApp = capture.selectApp(['Spotify', 'Music', 'Safari', 'Chrome']);
+// Reuse the prefetched app list for smarter selection and to avoid helpers
+const audioApps = capture.getAudioApps({
+  appList: permissionStatus.apps,
+  sortByActivity: true
+});
+
+const selectedApp = capture.selectApp(
+  ['Spotify', 'Music', 'Google Chrome', 'Safari', 'Arc', 'Firefox'],
+  {
+    appList: audioApps,
+    fallbackToFirst: true, // Grab first audio app if none match
+    audioOnly: false // audioApps already filtered
+  }
+);
 if (!selectedApp) {
   console.error('❌ No capturable applications found.');
   process.exit(1);
@@ -227,7 +249,8 @@ function startTargetCapture(target, captureConfig) {
       capture.captureDisplay(target.display.displayId, captureConfig);
       break;
     default:
-      capture.startCapture(target.app.applicationName, captureConfig);
+      // Pass full app object to avoid helper/AutoFill ambiguity
+      capture.startCapture(target.app, captureConfig);
       break;
   }
 }

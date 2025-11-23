@@ -29,15 +29,29 @@ const capture = new AudioCapture();
 console.log('Looking for audio source...');
 
 try {
-    // You can pass specific app names, or leave empty to find first available
-    // Example: createSTTStream(['Zoom', 'Teams', 'Google Chrome'])
-    const sttStream = capture.createSTTStream(null, {
-        minVolume: 0.05 // Ignore silence to save bandwidth
+    // Try common audio apps first, then fall back to first available
+    // This prioritizes apps that are more likely to be playing audio
+    const sttStream = capture.createSTTStream([
+        'Spotify',
+        'Music',
+        'Google Chrome',
+        'Chrome',
+        'Safari',
+        'Arc',
+        'Firefox',
+        'Zoom',
+        'Teams',
+        'Discord',
+        'Slack'
+    ], {
+        minVolume: 0.05, // Ignore silence to save bandwidth
+        autoSelect: true  // Fall back to first available if none match
     });
 
     console.log(`Started STT stream for: ${sttStream.app.applicationName} (PID: ${sttStream.app.processId})`);
     console.log('Format: Int16, Mono, 48kHz (default)');
-    console.log('Speaking (audio > 5% volume) will be captured...');
+    console.log('Minimum volume: 5% (ignoring silence)');
+    console.log('\n🎧 Listening for audio...');
 
     // 4. Simulate piping to an STT service
     // In a real app, you would pipe this to a WebSocket or HTTP request
@@ -46,13 +60,19 @@ try {
     // For this example, we'll just log data size
     let totalBytes = 0;
     let packets = 0;
+    let hasReceivedData = false;
 
     sttStream.on('data', (chunk) => {
-        // If objectMode is true (default for createSTTStream), we get sample objects
-        // If we piped to a file, we'd get raw buffers
+        // By default, createSTTStream outputs raw buffers (objectMode: false)
+        // If objectMode: true was passed, we'd get sample objects with metadata
         const size = chunk.data ? chunk.data.length : chunk.length;
         totalBytes += size;
         packets++;
+
+        if (!hasReceivedData) {
+            hasReceivedData = true;
+            console.log('✓ Receiving audio data!');
+        }
 
         process.stdout.write(`\rCaptured: ${packets} packets (${(totalBytes / 1024).toFixed(1)} KB)`);
     });
@@ -63,8 +83,16 @@ try {
 
     // Stop after 10 seconds
     setTimeout(() => {
-        console.log('\nStopping capture...');
+        console.log('\n\n⏹  Stopping capture...');
         sttStream.stop();
+
+        if (packets === 0) {
+            console.log('\n⚠️  No audio captured.');
+            console.log('   Make sure the selected app is playing audio and volume is above 5%.');
+        } else {
+            console.log(`\n✓ Captured ${packets} packets (${(totalBytes / 1024).toFixed(1)} KB)`);
+        }
+
         console.log('Done.');
         process.exit(0);
     }, 10000);

@@ -28,24 +28,35 @@ if (!permissionStatus.granted) {
 const capture = new AudioCapture();
 capture.enableActivityTracking({ decayMs: 60_000 });
 
-// 2) Smart target selection
+// 2) Smart target selection (reuse the permission app list to avoid extra native calls)
 const cliIdentifiers = process.argv.slice(2).filter(Boolean);
 const defaultCandidates = cliIdentifiers.length > 0
   ? cliIdentifiers
-  : ['Spotify', 'Music', 'Safari', 'Chrome', 'Firefox', 'VLC'];
+  : ['Spotify', 'Music', 'Google Chrome', 'Safari', 'Arc', 'Firefox'];
 
-const targetApp = capture.selectApp(defaultCandidates, { audioOnly: true });
+// Filter/sort the prefetched apps instead of calling getApplications() again
+const apps = capture.getAudioApps({
+  appList: permissionStatus.apps,
+  sortByActivity: true
+});
+
+const targetApp = capture.selectApp(defaultCandidates, {
+  appList: apps,
+  fallbackToFirst: cliIdentifiers.length === 0,
+  audioOnly: false // apps is already audio-only from getAudioApps()
+});
 
 if (!targetApp) {
   console.error('❌ No audio-capable applications were found.');
   console.log('\nAvailable applications:');
-  capture.getApplications().slice(0, 10).forEach(app => {
+  const fallbackList = (apps.length ? apps : (permissionStatus.apps || [])).slice(0, 10);
+  fallbackList.forEach(app => {
     console.log(`  • ${app.applicationName}`);
   });
   process.exit(1);
 }
 
-console.log(`Targeting ${targetApp.applicationName} (PID ${targetApp.processId})`);
+console.log(`Targeting ${targetApp.applicationName} (PID ${targetApp.processId}) [${targetApp.bundleIdentifier}]`);
 console.log('Starting capture with volume threshold...\n');
 
 let sampleCount = 0;
@@ -128,11 +139,15 @@ capture.on('error', (error) => {
   process.exit(1);
 });
 
-// Start capture with options
-capture.startCapture(targetApp.applicationName, {
-  minVolume: 0.01,    // Filter silence
-  format: 'float32'
-});
+// Start capture with options - pass the full targetApp object to bypass redundant app lookup
+try {
+  capture.startCapture(targetApp, {
+    minVolume: 0.01,    // Filter silence
+    format: 'float32'
+  });
+} catch (err) {
+  // Error already emitted via 'error' event
+}
 
 // Stop after 5 seconds
 const stopTimer = setTimeout(() => {
