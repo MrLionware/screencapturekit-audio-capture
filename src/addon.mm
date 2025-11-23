@@ -28,6 +28,8 @@ public:
 private:
     static Napi::FunctionReference constructor;
 
+    void ReleaseTSFN();
+
     Napi::Value GetAvailableApps(const Napi::CallbackInfo& info);
     Napi::Value GetAvailableWindows(const Napi::CallbackInfo& info);
     Napi::Value GetAvailableDisplays(const Napi::CallbackInfo& info);
@@ -71,14 +73,19 @@ ScreenCaptureAddon::ScreenCaptureAddon(const Napi::CallbackInfo& info)
     wrapper_ = std::make_unique<ScreenCaptureKitWrapper>();
 }
 
+void ScreenCaptureAddon::ReleaseTSFN() {
+    if (tsfn_) {
+        tsfn_.Release();
+        tsfn_ = Napi::ThreadSafeFunction(); // Reset to avoid double-release on teardown
+    }
+}
+
 ScreenCaptureAddon::~ScreenCaptureAddon() {
     if (wrapper_) {
         wrapper_->stopCapture();
     }
 
-    if (tsfn_) {
-        tsfn_.Release();
-    }
+    ReleaseTSFN();
 }
 
 Napi::Value ScreenCaptureAddon::GetAvailableApps(const Napi::CallbackInfo& info) {
@@ -216,9 +223,7 @@ Napi::Value ScreenCaptureAddon::StartCaptureWithConfig(const Napi::CallbackInfo&
     CaptureConfig config = ParseCaptureConfig(env, configObj);
     Napi::Function callback = info[2].As<Napi::Function>();
 
-    if (tsfn_) {
-        tsfn_.Release();
-    }
+    ReleaseTSFN();
 
     tsfn_ = Napi::ThreadSafeFunction::New(
         env,
@@ -345,9 +350,7 @@ Napi::Value ScreenCaptureAddon::StopCapture(const Napi::CallbackInfo& info) {
 
     wrapper_->stopCapture();
 
-    if (tsfn_) {
-        tsfn_.Release();
-    }
+    ReleaseTSFN();
 
     return env.Undefined();
 }
