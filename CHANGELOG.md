@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2025-11-25
+
+### Fixed
+- **macOS 26+ compatibility:** Replaced dispatch_semaphore with CFRunLoop pumping to handle ScreenCaptureKit completion handlers dispatched to main queue in macOS 26+
+- **macOS 26.2 ARC bug workaround:** Added manual content retention to work around FB21107737 where SCShareableContent was prematurely released
+
+### Added
+- **STTConverter properties:** Added `app` and `stop` optional properties to STTConverter class for integration with `AudioCapture.createSTTStream()` method
+
+### Changed
+- **Disabled ARC:** Switched to manual memory management (`-fno-objc-arc`) for more reliable object lifecycle control in native layer
+- **Type organization:** Moved `AudioStreamOptions` interface from audio-stream module to types module for better organization and reusability
+- **Simplified README:** Condensed documentation and linked to runnable TypeScript examples in `readme_examples/`
+- **Removed legacy examples:** Deleted old JavaScript `examples/` directory in favor of `readme_examples/`
+
+### Improved
+- **Test runner:** Overhauled `run_all.sh` with interactive app selection, audio detection, structured logging, and test summary
+- **Test coverage:** Added tests for stream stop idempotency, failure handling, and STT float32 passthrough
+
 ## [1.3.0] - 2025-11-24
 
 ### Added - TypeScript Migration
