@@ -3,7 +3,7 @@
  * Handles common conversions: Float32 to Int16, stereo to mono, resampling
  */
 import { Transform, TransformCallback } from 'stream';
-import type { AudioFormat, AudioSample } from './types';
+import type { ApplicationInfo, AudioFormat, AudioSample } from './types';
 /**
  * Options for creating an STTConverter
  */
@@ -37,6 +37,15 @@ export declare class STTConverter extends Transform {
      * Target output channels
      */
     readonly targetChannels: 1 | 2;
+    /**
+     * Application info when created via createSTTStream
+     * Set dynamically by AudioCapture.createSTTStream()
+     */
+    app?: ApplicationInfo;
+    /**
+     * Stop method added dynamically by AudioCapture.createSTTStream()
+     */
+    stop?: () => void;
     private readonly _objectMode;
     /**
      * Create a new STTConverter
