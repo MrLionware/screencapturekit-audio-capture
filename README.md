@@ -12,70 +12,133 @@ Capture real-time audio from any macOS application with a simple, event-driven A
 
 ## 📖 Table of Contents
 
-- [Features](#features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-  - [Build Requirements](#build-requirements)
-  - [Package Contents](#package-contents)
-  - [Version Recommendations](#version-recommendations)
-- [Quick Start](#quick-start)
-- **[Quick Integration Guide](#quick-integration-guide)** 🚀
-  - [Speech-to-Text (STT) Integration](#speech-to-text-stt-integration)
-  - [Voice Agent / Real-Time Processing](#voice-agent--real-time-processing)
-  - [Audio Monitoring / Recording](#audio-monitoring--recording)
-  - [Error-Resilient Production Setup](#error-resilient-production-setup)
-  - [Audio Sample Structure Reference](#audio-sample-structure-reference)
-- [Module Exports](#module-exports)
-- [Testing](#testing)
-- **[Stream-Based API](#stream-based-api)** ⭐
-  - [Stream Object Mode](#stream-object-mode)
-  - [When to Use Streams vs Events](#when-to-use-streams-vs-events)
-  - [Stream API Best Practices](#stream-api-best-practices)
-    - [1. Always Handle Errors](#1-always-handle-errors)
-    - [2. Use pipeline() for Complex Flows](#2-use-pipeline-for-complex-flows)
-    - [3. Clean Up Resources](#3-clean-up-resources)
-    - [4. Choose the Right Mode](#4-choose-the-right-mode)
-    - [5. Stream Must Flow to Start Capture](#5-stream-must-flow-to-start-capture)
-  - [Troubleshooting Stream Issues](#troubleshooting-stream-issues)
-  - [Stream Performance Tips](#stream-performance-tips)
-  - [Complete Working Example](#complete-working-example)
-- **[API Reference](#api-reference)**
-  - [Class: AudioCapture](#class-audiocapture)
-    - [Methods](#methods)
-    - [Window & Display Selection](#window--display-selection)
-    - [Activity Tracking](#enableactivitytrackingoptions-object-void)
-    - [Static Methods](#static-methods)
-    - [Events](#events)
-  - [Error Handling](#error-handling)
-  - [Class: AudioStream](#class-audiostream)
-  - [Low-Level API: ScreenCaptureKit](#low-level-api-screencapturekit)
-- [TypeScript](#typescript)
-- [Working with Audio Data](#working-with-audio-data)
-  - [Understanding the Buffer Format](#understanding-the-buffer-format)
-  - [Converting to Int16 Format](#converting-to-int16-format)
-  - [Filtering Silent Audio](#filtering-silent-audio)
-- **[Common Issues](#common-issues)** 🔧
-  - [No applications available](#no-applications-available)
-  - [Application not found](#application-not-found)
-  - [No audio samples received](#no-audio-samples-received)
-  - [How to work with the Buffer data](#how-to-work-with-the-buffer-data)
-  - [Stream API Issues](#stream-api-issues)
-  - [Build errors during installation](#build-errors-during-installation)
-- **[Examples](#examples)** 💡
-- [System Permissions](#system-permissions)
-- [Audio Format](#audio-format)
-- [Platform Support](#platform-support)
-- [Performance](#performance)
-- [Architecture](#architecture)
-- [Debugging & Troubleshooting](#debugging--troubleshooting)
-- [Migrating from Older Versions](#migrating-from-older-versions)
-  - [From v1.1.x to v1.2.x](#from-v11x-to-v12x)
-- [Contributing](#contributing)
-- [Changelog](#changelog)
-- [License](#license)
-- [Related Projects](#related-projects)
-- [Author](#author)
-- [Support](#support)
+- [ScreenCaptureKit Audio Capture](#screencapturekit-audio-capture)
+  - [📖 Table of Contents](#-table-of-contents)
+  - [Features](#features)
+  - [Requirements](#requirements)
+  - [Installation](#installation)
+    - [Build Requirements](#build-requirements)
+    - [Package Contents](#package-contents)
+    - [Version Recommendations](#version-recommendations)
+  - [Quick Start](#quick-start)
+  - [Quick Integration Guide](#quick-integration-guide)
+    - [Speech-to-Text (STT) Integration](#speech-to-text-stt-integration)
+    - [Voice Agent / Real-Time Processing](#voice-agent--real-time-processing)
+    - [Audio Monitoring / Recording](#audio-monitoring--recording)
+    - [Error-Resilient Production Setup](#error-resilient-production-setup)
+    - [Audio Sample Structure Reference](#audio-sample-structure-reference)
+  - [Module Exports](#module-exports)
+  - [Testing](#testing)
+  - [Stream-Based API](#stream-based-api)
+    - [Stream Object Mode](#stream-object-mode)
+    - [When to Use Streams vs Events](#when-to-use-streams-vs-events)
+    - [Stream API Best Practices](#stream-api-best-practices)
+      - [1. Always Handle Errors](#1-always-handle-errors)
+      - [2. Use pipeline() for Complex Flows](#2-use-pipeline-for-complex-flows)
+      - [3. Clean Up Resources](#3-clean-up-resources)
+      - [4. Choose the Right Mode](#4-choose-the-right-mode)
+      - [5. Stream Must Flow to Start Capture](#5-stream-must-flow-to-start-capture)
+    - [Troubleshooting Stream Issues](#troubleshooting-stream-issues)
+      - [Issue: "Application not found" Error](#issue-application-not-found-error)
+      - [Issue: No Data Events Emitted](#issue-no-data-events-emitted)
+      - [Issue: "stream.push() after EOF" Error](#issue-streampush-after-eof-error)
+      - [Issue: Multiple Streams from Same Capture](#issue-multiple-streams-from-same-capture)
+      - [Issue: Memory Usage Growing](#issue-memory-usage-growing)
+    - [Stream Performance Tips](#stream-performance-tips)
+      - [1. Use Normal Mode for Better Performance](#1-use-normal-mode-for-better-performance)
+      - [2. Process Data Efficiently](#2-process-data-efficiently)
+      - [3. Use Appropriate highWaterMark](#3-use-appropriate-highwatermark)
+    - [Complete Working Example](#complete-working-example)
+  - [API Reference](#api-reference)
+    - [Class: `AudioCapture`](#class-audiocapture)
+      - [Methods](#methods)
+        - [`getApplications(options?: object): ApplicationInfo[]`](#getapplicationsoptions-object-applicationinfo)
+        - [`findApplication(identifier: string): ApplicationInfo | null`](#findapplicationidentifier-string-applicationinfo--null)
+        - [`findByName(name: string): ApplicationInfo | null`](#findbynamename-string-applicationinfo--null)
+        - [`getAudioApps(options?: object): ApplicationInfo[]`](#getaudioappsoptions-object-applicationinfo)
+        - [`getApplicationByPid(processId: number): ApplicationInfo | null`](#getapplicationbypidprocessid-number-applicationinfo--null)
+        - [Window \& Display Selection](#window--display-selection)
+        - [`selectApp(identifiers?: string | number | Array, options?: Object): ApplicationInfo | null`](#selectappidentifiers-string--number--array-options-object-applicationinfo--null)
+        - [`enableActivityTracking(options?: object): void`](#enableactivitytrackingoptions-object-void)
+        - [`disableActivityTracking(): void`](#disableactivitytracking-void)
+        - [`getActivityInfo(): Object`](#getactivityinfo-object)
+        - [`AudioCapture.verifyPermissions(): Object` (Static)](#audiocaptureverifypermissions-object-static)
+        - [`getStatus(): Object | null`](#getstatus-object--null)
+        - [`startCapture(appIdentifier: string | number | Object, options?: object): boolean`](#startcaptureappidentifier-string--number--object-options-object-boolean)
+        - [`stopCapture(): void`](#stopcapture-void)
+        - [`isCapturing(): boolean`](#iscapturing-boolean)
+        - [`getCurrentCapture(): CaptureInfo | null`](#getcurrentcapture-captureinfo--null)
+        - [`createAudioStream(appIdentifier: string | number, options?: object): AudioStream`](#createaudiostreamappidentifier-string--number-options-object-audiostream)
+        - [`createSTTStream(appIdentifier?: string | number | Array, options?: object): STTConverter`](#createsttstreamappidentifier-string--number--array-options-object-sttconverter)
+      - [Static Methods](#static-methods)
+        - [`AudioCapture.bufferToFloat32Array(buffer: Buffer): Float32Array`](#audiocapturebuffertofloat32arraybuffer-buffer-float32array)
+        - [`AudioCapture.rmsToDb(rms: number): number`](#audiocapturermstodbrms-number-number)
+        - [`AudioCapture.peakToDb(peak: number): number`](#audiocapturepeaktodbpeak-number-number)
+        - [`AudioCapture.calculateDb(samples: Buffer, method?: 'rms' | 'peak'): number`](#audiocapturecalculatedbsamples-buffer-method-rms--peak-number)
+        - [`AudioCapture.writeWav(buffer: Buffer, options: object): Buffer`](#audiocapturewritewavbuffer-buffer-options-object-buffer)
+      - [Events](#events)
+        - [Event: `'start'`](#event-start)
+        - [Event: `'audio'`](#event-audio)
+        - [Event: `'stop'`](#event-stop)
+        - [Event: `'error'`](#event-error)
+    - [Error Handling](#error-handling)
+      - [Class: `AudioCaptureError`](#class-audiocaptureerror)
+      - [Error Codes](#error-codes)
+    - [Class: `AudioStream`](#class-audiostream)
+      - [Methods](#methods-1)
+        - [`stop(): void`](#stop-void)
+        - [`getCurrentCapture(): CaptureInfo | null`](#getcurrentcapture-captureinfo--null-1)
+      - [Stream Events](#stream-events)
+    - [Low-Level API: ScreenCaptureKit](#low-level-api-screencapturekit)
+  - [TypeScript](#typescript)
+    - [Available Types](#available-types)
+  - [Working with Audio Data](#working-with-audio-data)
+    - [Understanding the Buffer Format](#understanding-the-buffer-format)
+    - [Converting to Int16 Format](#converting-to-int16-format)
+    - [Filtering Silent Audio](#filtering-silent-audio)
+  - [Common Issues](#common-issues)
+    - [No applications available](#no-applications-available)
+    - [Application not found](#application-not-found)
+    - [No audio samples received](#no-audio-samples-received)
+    - [How to work with the Buffer data](#how-to-work-with-the-buffer-data)
+    - [Stream API Issues](#stream-api-issues)
+    - [Build errors during installation](#build-errors-during-installation)
+    - [Capture timeout errors (macOS 15+)](#capture-timeout-errors-macos-15)
+  - [Examples](#examples)
+    - [Stream-Based Audio Processing](#stream-based-audio-processing)
+    - [Audio Visualizer](#audio-visualizer)
+    - [Record to File](#record-to-file)
+    - [Save as WAV File](#save-as-wav-file)
+    - [Volume Monitor with Alerts](#volume-monitor-with-alerts)
+    - [Smart Audio Detection (with Volume Threshold)](#smart-audio-detection-with-volume-threshold)
+    - [Convert to Int16 for Audio Libraries](#convert-to-int16-for-audio-libraries)
+    - [Finding and Filtering Apps](#finding-and-filtering-apps)
+    - [Processing Audio Samples](#processing-audio-samples)
+  - [System Permissions](#system-permissions)
+    - [Granting Permission](#granting-permission)
+    - [Checking Permissions](#checking-permissions)
+  - [Audio Format](#audio-format)
+  - [Platform Support](#platform-support)
+  - [Performance](#performance)
+  - [Architecture](#architecture)
+    - [Native Layer Implementation](#native-layer-implementation)
+  - [Debugging \& Troubleshooting](#debugging--troubleshooting)
+    - [Enable Verbose Logging](#enable-verbose-logging)
+    - [Check Native Module Load](#check-native-module-load)
+    - [Verify Permissions Programmatically](#verify-permissions-programmatically)
+    - [Test Basic Capture](#test-basic-capture)
+    - [Debug Build Issues](#debug-build-issues)
+  - [Migrating from Older Versions](#migrating-from-older-versions)
+    - [TypeScript Rewrite (v1.2.x)](#typescript-rewrite-v12x)
+    - [From v1.1.x to v1.2.x](#from-v11x-to-v12x)
+    - [From v1.0.x to v1.1.x](#from-v10x-to-v11x)
+    - [From v1.1.1 to v1.1.2](#from-v111-to-v112)
+  - [Contributing](#contributing)
+  - [Changelog](#changelog)
+  - [License](#license)
+  - [Related Projects](#related-projects)
+  - [Author](#author)
+  - [Support](#support)
 
 ---
 
@@ -89,7 +152,7 @@ Capture real-time audio from any macOS application with a simple, event-driven A
 - 📊 **Audio Analysis** - Built-in RMS, peak, and dB calculations
 - 💾 **WAV File Export** - Simple helper to save audio as standard WAV files
 - 🔒 **Memory Safe** - No crashes, proper resource cleanup
-- 📘 **TypeScript Support** - Full type definitions included
+- 📘 **TypeScript-First** - Written in TypeScript with full type definitions
 - 🚀 **Production Ready** - Thoroughly tested and documented
 
 ## Requirements
@@ -130,11 +193,11 @@ All frameworks are part of the macOS system and require no additional installati
 ### Package Contents
 
 When installed from npm, the package includes:
-- `src/` - Native C++/Objective-C++ source code
+- `src/` - TypeScript SDK source code and native C++/Objective-C++ code
+- `dist/` - Compiled JavaScript and TypeScript declarations
 - `binding.gyp` - Native build configuration
-- `sdk.js` - High-level JavaScript wrapper
+- `sdk.js` - Legacy JavaScript wrapper (for backward compatibility)
 - `index.js` - Native addon loader
-- `index.d.ts` - TypeScript definitions
 - `README.md`, `LICENSE`, `CHANGELOG.md`
 
 **Note:** Example files are available in the [GitHub repository](https://github.com/mrlionware/screencapturekit-audio-capture/tree/main/examples) but are not included in the npm package to reduce installation size.
@@ -153,28 +216,38 @@ npm update screencapturekit-audio-capture
 
 ## Quick Start
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
+```typescript
+import { AudioCapture, type AudioSample, type ApplicationInfo } from 'screencapturekit-audio-capture';
 
 const capture = new AudioCapture();
 
 // List available applications
-const apps = capture.getApplications();
-apps.forEach(app => {
+const apps: ApplicationInfo[] = capture.getApplications();
+apps.forEach((app) => {
   console.log(`${app.applicationName} (PID: ${app.processId})`);
   console.log(`  Bundle ID: ${app.bundleIdentifier}`);
 });
 
-// Start capturing from Spotify
-capture.on('audio', (sample) => {
+// Find Spotify or fall back to first available audio app
+const audioApps = capture.getAudioApps();
+const targetApp = audioApps.find((a) => a.applicationName === 'Spotify') || audioApps[0];
+
+if (!targetApp) {
+  console.log('No audio apps found to capture from.');
+  process.exit(0);
+}
+
+console.log(`Capturing from: ${targetApp.applicationName}`);
+
+capture.on('audio', (sample: AudioSample) => {
   // Convert Buffer to Float32Array for easier processing
-  const float32 = AudioCapture.bufferToFloat32Array(sample.data);
+  const float32: Float32Array = AudioCapture.bufferToFloat32Array(sample.data);
 
   console.log(`Got ${float32.length} samples at ${sample.sampleRate}Hz`);
   console.log(`Volume: ${AudioCapture.rmsToDb(sample.rms).toFixed(1)} dB`);
 });
 
-capture.startCapture('Spotify');
+capture.startCapture(targetApp.processId);
 
 // Stop after 10 seconds
 setTimeout(() => capture.stopCapture(), 10000);
@@ -188,64 +261,81 @@ Common patterns for integrating audio capture into your application:
 
 **Simple approach with createSTTStream():**
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
-const { pipeline } = require('stream');
+```typescript
+import { AudioCapture, STTConverter } from 'screencapturekit-audio-capture';
+import { pipeline, Writable } from 'stream';
 
 const capture = new AudioCapture();
 
+// Example: Create your STT writable stream (replace with your actual STT engine)
+const sttWritableStream = new Writable({
+  write(chunk, encoding, callback) {
+    // Send chunk to your STT engine (e.g., Google Speech, Whisper, etc.)
+    console.log(`[STT] Received ${chunk.length} bytes of Int16 audio`);
+    callback();
+  }
+});
+
 // One-line STT stream with auto-conversion to Int16 mono
-const sttStream = capture.createSTTStream(['Safari', 'Chrome', 'Zoom'], {
+const sttStream: STTConverter = capture.createSTTStream(['Safari', 'Chrome', 'Zoom', 'Music', 'Spotify'], {
   minVolume: 0.01      // Filter silence
 });
 
 // Pipe directly to your STT engine
 pipeline(
   sttStream,
-  yourSTTWritableStream,
+  sttWritableStream,
   (err) => {
     if (err) console.error('STT pipeline error:', err);
+    else console.log('STT pipeline finished');
   }
 );
 
 // Which app was selected?
-console.log(`Capturing from: ${sttStream.app.applicationName}`);
+if (sttStream.app) {
+  console.log(`Capturing from: ${sttStream.app.applicationName}`);
+}
 
 // Stop when done
-setTimeout(() => sttStream.stop(), 30000);
+setTimeout(() => sttStream.stop?.(), 30000);
 ```
 
 **Event-based approach with manual configuration:**
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
+```typescript
+import { AudioCapture, type AudioSample, type PermissionStatus, type ApplicationInfo } from 'screencapturekit-audio-capture';
 
 const capture = new AudioCapture();
 
 // Check permissions first
-const perms = AudioCapture.verifyPermissions();
+const perms: PermissionStatus = AudioCapture.verifyPermissions();
 if (!perms.granted) {
   console.error(perms.message);
   console.log(perms.remediation);
   process.exit(1);
 }
 
-// Smart app selection with fallback
-const app = capture.selectApp(['Safari', 'Chrome', 'Zoom']);
+// Smart app selection with fallback to first available
+const app: ApplicationInfo | null = capture.selectApp(['Safari', 'Chrome', 'Zoom', 'Music', 'Spotify'], {
+  fallbackToFirst: true
+});
 if (!app) {
   console.error('No suitable app found');
   process.exit(1);
 }
 
+console.log(`Selected app: ${app.applicationName}`);
+
 capture.startCapture(app.processId, {
   format: 'int16',      // Most STT engines expect Int16
   channels: 1,          // Mono reduces bandwidth by 50%
-  minVolume: 0.01      // Filter silence
+  minVolume: 0.01       // Filter silence
 });
 
-capture.on('audio', (sample) => {
+capture.on('audio', (sample: AudioSample) => {
   // sample.data is Int16 Buffer, ready for STT
-  sendToSTTEngine(sample.data, sample.sampleRate, sample.channels);
+  // sendToSTTEngine(sample.data, sample.sampleRate, sample.channels);
+  console.log(`[Event STT] Got ${sample.data.length} bytes Int16 audio`);
 });
 
 capture.on('error', (err) => console.error('Capture error:', err));
@@ -253,14 +343,14 @@ capture.on('error', (err) => console.error('Capture error:', err));
 
 ### Voice Agent / Real-Time Processing
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
-const { pipeline } = require('stream');
+```typescript
+import { AudioCapture, AudioStream, type CaptureStatus } from 'screencapturekit-audio-capture';
+import { pipeline } from 'stream';
 
 const capture = new AudioCapture();
 
 // Stream API for backpressure handling
-const audioStream = capture.createAudioStream('Zoom', {
+const audioStream: AudioStream = capture.createAudioStream('Zoom', {
   objectMode: true,      // Get metadata with each chunk
   minVolume: 0.005,      // Voice activity detection threshold
   format: 'int16',
@@ -279,66 +369,81 @@ pipeline(
 );
 
 // Check status anytime
-const status = capture.getStatus();
+const status: CaptureStatus | null = capture.getStatus();
 if (status) {
-  console.log(`Capturing from: ${status.app.applicationName}`);
+  console.log(`Capturing from: ${status.app?.applicationName}`);
   console.log(`Config: ${status.config.format}, ${status.config.minVolume} threshold`);
 }
 ```
 
 ### Audio Monitoring / Recording
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
-const fs = require('fs');
+```typescript
+import { AudioCapture, type AudioSample } from 'screencapturekit-audio-capture';
+import fs from 'fs';
+import path from 'path';
 
 const capture = new AudioCapture();
-const chunks = [];
+const chunks: Buffer[] = [];
+
+// Find an app with fallback
+const app = capture.selectApp(['Music', 'Spotify', 'YouTube', 'Safari'], { fallbackToFirst: true });
+if (!app) {
+  console.log('No app found for recording.');
+  process.exit(0);
+}
+
+console.log(`Recording from: ${app.applicationName}`);
 
 // Efficient configuration for recording
-capture.startCapture('Music', {
+capture.startCapture(app.processId, {
   format: 'int16',       // 50% smaller than float32
   channels: 2,           // Preserve stereo
-  bufferSize: 4096      // Larger buffer = lower CPU
+  bufferSize: 4096       // Larger buffer = lower CPU
 });
 
-capture.on('audio', (sample) => {
+capture.on('audio', (sample: AudioSample) => {
   chunks.push(sample.data);
 
-  // Monitor levels
-  const db = AudioCapture.rmsToDb(sample.rms);
-  console.log(`Level: ${db.toFixed(1)} dB`);
+  // Monitor levels (log only occasionally to avoid spam)
+  const db: number = AudioCapture.rmsToDb(sample.rms);
+  if (Math.random() < 0.05) console.log(`Level: ${db.toFixed(1)} dB`);
 });
 
 capture.on('stop', () => {
   // Save as WAV file
-  const combined = Buffer.concat(chunks);
-  const wav = AudioCapture.writeWav(combined, {
+  const combined: Buffer = Buffer.concat(chunks);
+  const wav: Buffer = AudioCapture.writeWav(combined, {
     sampleRate: 48000,
     channels: 2,
     format: 'int16'
   });
-  fs.writeFileSync('recording.wav', wav);
-  console.log('Saved recording.wav');
+
+  const outputPath = path.join(__dirname, 'recording.wav');
+  fs.writeFileSync(outputPath, wav);
+  console.log(`Saved recording.wav to ${outputPath}`);
 });
 
-// Stop after 30 seconds
-setTimeout(() => capture.stopCapture(), 30000);
+// Stop after 10 seconds
+setTimeout(() => capture.stopCapture(), 10000);
 ```
 
 ### Error-Resilient Production Setup
 
-```javascript
-const { AudioCapture, ErrorCodes } = require('screencapturekit-audio-capture');
+```typescript
+import { AudioCapture, AudioCaptureError, ErrorCode, type AudioSample, type ApplicationInfo, type CaptureStatus } from 'screencapturekit-audio-capture';
 
 class RobustAudioCapture {
-  constructor(appName) {
+  private appName: string;
+  private capture: AudioCapture;
+
+  constructor(appName: string) {
     this.appName = appName;
     this.capture = new AudioCapture();
     this.setupHandlers();
   }
 
-  async start() {
+  async start(): Promise<void> {
     // Verify permissions first
     const perms = AudioCapture.verifyPermissions();
     if (!perms.granted) {
@@ -354,14 +459,14 @@ class RobustAudioCapture {
       });
 
       // Verify we're actually capturing
-      const status = this.capture.getStatus();
-      console.log(`Started capturing from: ${status.app.applicationName}`);
+      const status: CaptureStatus | null = this.capture.getStatus();
+      console.log(`Started capturing from: ${status?.app?.applicationName}`);
 
     } catch (err) {
-      if (err.code === ErrorCodes.APP_NOT_FOUND) {
+      if (AudioCaptureError.isAudioCaptureError(err) && err.code === ErrorCode.APP_NOT_FOUND) {
         // Try to find similar app
-        const apps = this.capture.getApplications();
-        const similar = apps.find(app =>
+        const apps: ApplicationInfo[] = this.capture.getApplications();
+        const similar = apps.find((app) =>
           app.applicationName.toLowerCase().includes(this.appName.toLowerCase())
         );
 
@@ -377,23 +482,23 @@ class RobustAudioCapture {
     }
   }
 
-  setupHandlers() {
-    this.capture.on('audio', (sample) => this.handleAudio(sample));
-    this.capture.on('error', (err) => this.handleError(err));
-    this.capture.on('start', ({ app }) => console.log(`Started: ${app.applicationName}`));
-    this.capture.on('stop', ({ app }) => console.log(`Stopped: ${app.applicationName}`));
+  private setupHandlers(): void {
+    this.capture.on('audio', (sample: AudioSample) => this.handleAudio(sample));
+    this.capture.on('error', (err: Error) => this.handleError(err));
+    this.capture.on('start', ({ app }) => console.log(`Started: ${app?.applicationName}`));
+    this.capture.on('stop', ({ app }) => console.log(`Stopped: ${app?.applicationName}`));
   }
 
-  handleAudio(sample) {
+  private handleAudio(sample: AudioSample): void {
     // Your audio processing here
   }
 
-  handleError(err) {
+  private handleError(err: Error): void {
     console.error('Capture error:', err.message);
     // Implement retry logic, logging, etc.
   }
 
-  stop() {
+  stop(): void {
     if (this.capture.isCapturing()) {
       this.capture.stopCapture();
     }
@@ -409,18 +514,18 @@ capture.start().catch(console.error);
 
 All audio samples include these properties:
 
-```javascript
-{
-  data: Buffer,           // Audio data (Float32 or Int16 depending on format option)
-  sampleRate: 48000,      // Sample rate in Hz
-  channels: 2,            // Number of channels (1 = mono, 2 = stereo)
-  timestamp: 123.45,      // Timestamp in seconds
-  format: 'float32',      // 'float32' or 'int16'
-  sampleCount: 15360,     // Total sample values across all channels
-  framesCount: 7680,      // Frames per channel
-  durationMs: 160,        // Duration in milliseconds
-  rms: 0.123,            // RMS volume (0.0 to 1.0)
-  peak: 0.456            // Peak volume (0.0 to 1.0)
+```typescript
+interface AudioSample {
+  data: Buffer;           // Audio data (Float32 or Int16 depending on format option)
+  sampleRate: number;     // Sample rate in Hz (e.g., 48000)
+  channels: number;       // Number of channels (1 = mono, 2 = stereo)
+  timestamp: number;      // Timestamp in seconds
+  format: 'float32' | 'int16';  // Audio format
+  sampleCount: number;    // Total sample values across all channels
+  framesCount: number;    // Frames per channel
+  durationMs: number;     // Duration in milliseconds
+  rms: number;            // RMS volume (0.0 to 1.0)
+  peak: number;           // Peak volume (0.0 to 1.0)
 }
 ```
 
@@ -428,19 +533,22 @@ All audio samples include these properties:
 
 The package provides multiple exports for different use cases:
 
-```javascript
-// Default export - High-level API (recommended)
-const AudioCapture = require('screencapturekit-audio-capture');
-
-// OR destructure specific exports:
-const {
+```typescript
+// Import classes and types
+import {
   AudioCapture,          // High-level SDK wrapper
   AudioStream,           // Readable stream class
   STTConverter,          // STT conversion transform stream
   ScreenCaptureKit,      // Low-level native binding
   AudioCaptureError,     // Custom error class
-  ErrorCodes            // Error code constants
-} = require('screencapturekit-audio-capture');
+  ErrorCode,             // Error code enum (recommended)
+  ErrorCodes,            // Error codes object (legacy)
+  // Type imports
+  type AudioSample,
+  type ApplicationInfo,
+  type CaptureOptions,
+  type PermissionStatus,
+} from 'screencapturekit-audio-capture';
 ```
 
 **Available Exports:**
@@ -451,20 +559,36 @@ const {
 | `AudioStream` | Readable stream class | Created via `createAudioStream()` |
 | `STTConverter` | Transform stream for STT | Created via `createSTTStream()` |
 | `AudioCaptureError` | Custom error class with codes/details | Structured error handling |
-| `ErrorCodes` | Machine-readable error codes | Branching without string matching |
+| `ErrorCode` | Error code enum | Type-safe error branching |
+| `ErrorCodes` | Error codes object (deprecated) | Legacy compatibility |
 | `ScreenCaptureKit` | Low-level native binding | Advanced users, minimal overhead |
+
+**Type Exports (TypeScript):**
+
+All types are exported for TypeScript users:
+- `AudioSample`, `ApplicationInfo`, `WindowInfo`, `DisplayInfo`
+- `CaptureInfo`, `CaptureStatus`, `PermissionStatus`
+- `CaptureOptions`, `AudioStreamOptions`, `STTStreamOptions`
+- See the [TypeScript section](#typescript) for full details.
 
 ## Testing
 
 **Note:** Test files are available in the [GitHub repository](https://github.com/mrlionware/screencapturekit-audio-capture) but are not included in the npm package.
 
-Tests live under `tests/` and use Node's built-in test runner (**Node 18+**). See `tests/README.md` for layout and migration notes.
+Tests are written in **TypeScript** and live under `tests/`. They use Node's built-in test runner with `tsx` (**Node 18+**).
 
-- `npm test` — Runs every suite in `tests/**` (unit, integration, examples, edge-cases) against the mocked ScreenCaptureKit layer; works cross-platform.
+**Test Commands:**
+
+- `npm test` — Runs every suite in `tests/**/*.test.ts` (unit, integration, examples, edge-cases) against the mocked ScreenCaptureKit layer; works cross-platform.
 - `npm run test:unit` — Fast coverage for utilities, audio metrics, selection, and capture control.
 - `npm run test:integration` — Multi-component flows (window/display capture, activity tracking, capability guards) using the shared mock.
 - `npm run test:examples` — Example validation scaffolding (mirrors the runnable scripts).
 - `npm run test:edge-cases` — Boundary/error handling coverage.
+
+**Type Checking:**
+
+- `npm run typecheck` — Type-check the SDK source code.
+- `npm run typecheck:tests` — Type-check the test files.
 
 For true hardware validation, run the example scripts on macOS with Screen Recording permission enabled.
 
@@ -472,26 +596,36 @@ For true hardware validation, run the example scripts on macOS with Screen Recor
 
 In addition to the event-based API, you can use Node.js Readable streams for a more composable approach:
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
-const { pipeline } = require('stream');
-const fs = require('fs');
+```typescript
+import { AudioCapture, AudioStream } from 'screencapturekit-audio-capture';
+import { pipeline } from 'stream';
+import fs from 'fs';
+import path from 'path';
 
 const capture = new AudioCapture();
 
+// Find an app with fallback
+const app = capture.selectApp(['Spotify', 'Music', 'Chrome'], { fallbackToFirst: true });
+if (!app) {
+  console.log('No app found for streaming.');
+  process.exit(0);
+}
+console.log(`Streaming from: ${app.applicationName}`);
+
 // Create a readable stream
-const audioStream = capture.createAudioStream('Spotify', {
+const audioStream: AudioStream = capture.createAudioStream(app.processId, {
   minVolume: 0.01,
   format: 'float32'
 });
 
-// Pipe to any writable stream
-audioStream.pipe(myProcessor);
+// Pipe to a file stream (or any writable stream)
+const outputPath = path.join(__dirname, 'stream_output.raw');
+const writeStream = fs.createWriteStream(outputPath);
+audioStream.pipe(writeStream);
 
 // Or use pipeline for better error handling
 pipeline(
   audioStream,
-  myTransform,
   fs.createWriteStream('output.raw'),
   (err) => {
     if (err) console.error('Pipeline failed:', err);
@@ -500,29 +634,44 @@ pipeline(
 );
 
 // Stop the stream
-setTimeout(() => audioStream.stop(), 10000);
+setTimeout(() => {
+  console.log('Stopping stream...');
+  audioStream.stop();
+}, 10000);
 ```
 
 ### Stream Object Mode
 
 Enable object mode to receive full sample objects with metadata instead of just raw buffers:
 
-```javascript
-const audioStream = capture.createAudioStream('Spotify', {
+```typescript
+import { AudioCapture, AudioStream, type AudioSample } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+
+// Find any audio app
+const app = capture.selectApp(undefined, { fallbackToFirst: true });
+if (!app) {
+  console.log('No app found.');
+  process.exit(0);
+}
+
+// Returns full sample objects with metadata
+const audioStream: AudioStream = capture.createAudioStream(app.processId, {
   objectMode: true  // Receive full sample objects
 });
 
-audioStream.on('data', (sample) => {
-  // Full sample object with metadata
-  console.log({
-    sampleRate: sample.sampleRate,
-    channels: sample.channels,
-    format: sample.format,
-    rms: sample.rms,
-    peak: sample.peak,
-    durationMs: sample.durationMs
-  });
+audioStream.on('data', (sample: AudioSample) => {
+  // sample contains both data and metadata
+  if (sample.rms > 0.01) {
+    console.log(`Loud audio detected: ${sample.rms.toFixed(4)}`);
+  }
 });
+
+setTimeout(() => {
+  console.log('Stopping object mode stream...');
+  audioStream.stop();
+}, 5000);
 ```
 
 ### When to Use Streams vs Events
@@ -547,23 +696,26 @@ Both APIs use the same underlying capture mechanism and have identical performan
 
 Streams require explicit error handling. Unhandled stream errors can crash your application.
 
-```javascript
-const audioStream = capture.createAudioStream('Spotify');
+```typescript
+import { AudioCapture, AudioStream, AudioCaptureError, ErrorCode, type ApplicationInfo } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+const audioStream: AudioStream = capture.createAudioStream('Spotify');
 
 // REQUIRED: Always attach an error handler
-audioStream.on('error', (error) => {
+audioStream.on('error', (error: Error) => {
   console.error('Stream error:', error.message);
 
   // Check error code for specific handling
-  if (error.code === 'ERR_APP_NOT_FOUND') {
+  if (AudioCaptureError.isAudioCaptureError(error) && error.code === ErrorCode.APP_NOT_FOUND) {
     console.log('Application not found. Available apps:');
-    capture.getApplications().forEach(app => {
+    capture.getApplications().forEach((app: ApplicationInfo) => {
       console.log(`  - ${app.applicationName}`);
     });
   }
 });
 
-audioStream.on('data', (chunk) => {
+audioStream.on('data', (chunk: Buffer) => {
   // Process audio
 });
 ```
@@ -572,8 +724,8 @@ audioStream.on('data', (chunk) => {
 
 For multiple stream operations, use `pipeline()` instead of chaining `.pipe()` for better error handling:
 
-```javascript
-const { pipeline } = require('stream');
+```typescript
+import { pipeline } from 'stream';
 
 // Good: Centralized error handling
 pipeline(
@@ -602,17 +754,21 @@ audioStream
 
 Always stop streams when done to free resources:
 
-```javascript
+```typescript
+import { AudioCapture, AudioStream } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+const audioStream: AudioStream = capture.createAudioStream('Spotify');
+
 // Set a timeout
-const audioStream = capture.createAudioStream('Spotify');
 setTimeout(() => {
   audioStream.stop();
 }, 30000);
 
 // Or handle graceful shutdown
 process.on('SIGINT', () => {
+  console.log('\nShutting down...');
   audioStream.stop();
-  process.exit(0);
 });
 
 // Listen for end event
@@ -625,11 +781,15 @@ audioStream.on('end', () => {
 
 **Normal Mode (default):** Use when you only need raw audio data
 
-```javascript
-// Returns raw Buffer objects - more memory efficient
-const audioStream = capture.createAudioStream('Spotify');
+```typescript
+import { AudioCapture, AudioStream } from 'screencapturekit-audio-capture';
 
-audioStream.on('data', (buffer) => {
+const capture = new AudioCapture();
+
+// Returns raw Buffer objects - more memory efficient
+const audioStream: AudioStream = capture.createAudioStream('Spotify');
+
+audioStream.on('data', (buffer: Buffer) => {
   // buffer is a Buffer containing audio samples
   // No metadata included - smaller memory footprint
   processRawAudio(buffer);
@@ -638,13 +798,17 @@ audioStream.on('data', (buffer) => {
 
 **Object Mode:** Use when you need metadata (RMS, peak, timestamps)
 
-```javascript
+```typescript
+import { AudioCapture, AudioStream, type AudioSample } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+
 // Returns full sample objects with metadata
-const audioStream = capture.createAudioStream('Spotify', {
+const audioStream: AudioStream = capture.createAudioStream('Spotify', {
   objectMode: true
 });
 
-audioStream.on('data', (sample) => {
+audioStream.on('data', (sample: AudioSample) => {
   // sample contains both data and metadata
   if (sample.rms > 0.1) {
     console.log(`Loud audio detected: ${sample.rms}`);
@@ -657,14 +821,17 @@ audioStream.on('data', (sample) => {
 
 The stream only starts capturing when it begins flowing. Attach a 'data' or 'readable' listener:
 
-```javascript
-const audioStream = capture.createAudioStream('Spotify');
+```typescript
+import { AudioCapture, AudioStream } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+const audioStream: AudioStream = capture.createAudioStream('Spotify');
 
 // Won't start capturing - stream is paused
-audioStream.on('error', (err) => console.error(err));
+audioStream.on('error', (err: Error) => console.error(err));
 
 // Will start capturing - stream flows
-audioStream.on('data', (chunk) => {
+audioStream.on('data', (chunk: Buffer) => {
   // Process audio
 });
 ```
@@ -675,7 +842,7 @@ audioStream.on('data', (chunk) => {
 
 **Symptom:** Stream emits error immediately after creation
 
-```javascript
+```typescript
 const audioStream = capture.createAudioStream('Spotify');
 // Error: Application "Spotify" not found
 ```
@@ -683,24 +850,32 @@ const audioStream = capture.createAudioStream('Spotify');
 **Solutions:**
 
 1. **Verify the app is running:**
-```javascript
-const app = capture.findApplication('Spotify');
+```typescript
+import { AudioCapture, AudioStream, type ApplicationInfo } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+const app: ApplicationInfo | null = capture.findApplication('Spotify');
+
 if (!app) {
   console.log('Spotify is not running. Available apps:');
-  capture.getApplications().forEach(a => console.log(`  - ${a.applicationName}`));
+  capture.getApplications().forEach((a) => console.log(`  - ${a.applicationName}`));
 } else {
-  const audioStream = capture.createAudioStream(app.applicationName);
+  const audioStream: AudioStream = capture.createAudioStream(app.applicationName);
 }
 ```
 
 2. **Use fallback apps:**
-```javascript
-function createStreamWithFallback(preferredApp) {
-  let app = capture.findApplication(preferredApp);
+```typescript
+import { AudioCapture, AudioStream, type ApplicationInfo } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+
+function createStreamWithFallback(preferredApp: string): AudioStream | null {
+  let app: ApplicationInfo | null = capture.findApplication(preferredApp);
 
   if (!app) {
     // Try audio apps first
-    const audioApps = capture.getAudioApps();
+    const audioApps: ApplicationInfo[] = capture.getAudioApps();
     if (audioApps.length > 0) {
       app = audioApps[0];
       console.log(`Using ${app.applicationName} instead`);
@@ -710,7 +885,7 @@ function createStreamWithFallback(preferredApp) {
   return app ? capture.createAudioStream(app.applicationName) : null;
 }
 
-const stream = createStreamWithFallback('Spotify');
+const stream: AudioStream | null = createStreamWithFallback('Spotify');
 ```
 
 #### Issue: No Data Events Emitted
@@ -720,8 +895,11 @@ const stream = createStreamWithFallback('Spotify');
 **Common Causes:**
 
 1. **Application not producing audio:**
-```javascript
-const audioStream = capture.createAudioStream('Spotify', { objectMode: true });
+```typescript
+import { AudioCapture, AudioStream, type AudioSample } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+const audioStream: AudioStream = capture.createAudioStream('Spotify', { objectMode: true });
 
 let dataReceived = false;
 const timeout = setTimeout(() => {
@@ -731,7 +909,7 @@ const timeout = setTimeout(() => {
   }
 }, 5000);
 
-audioStream.on('data', (sample) => {
+audioStream.on('data', (sample: AudioSample) => {
   dataReceived = true;
   clearTimeout(timeout);
   console.log(`Audio received: RMS=${sample.rms}, Peak=${sample.peak}`);
@@ -739,26 +917,30 @@ audioStream.on('data', (sample) => {
 ```
 
 2. **Volume threshold too high:**
-```javascript
+```typescript
+import { AudioCapture, AudioStream } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+
 // May filter out all audio if threshold is too high
-const audioStream = capture.createAudioStream('Spotify', {
+const audioStreamHigh: AudioStream = capture.createAudioStream('Spotify', {
   minVolume: 0.5  // Very high - most audio will be filtered
 });
 
 // Solution: Lower or remove threshold
-const audioStream = capture.createAudioStream('Spotify', {
+const audioStreamLow: AudioStream = capture.createAudioStream('Spotify', {
   minVolume: 0.01  // Lower threshold
 });
 
 // Or remove completely for testing
-const audioStream = capture.createAudioStream('Spotify');
+const audioStreamNoThreshold: AudioStream = capture.createAudioStream('Spotify');
 ```
 
 #### Issue: "stream.push() after EOF" Error
 
 **Symptom:** Error when stopping stream in a pipeline
 
-```javascript
+```typescript
 // This can happen when stopping abruptly
 setTimeout(() => audioStream.stop(), 1000);
 // Error: stream.push() after EOF
@@ -766,16 +948,20 @@ setTimeout(() => audioStream.stop(), 1000);
 
 **Solution:** Let pipeline handle cleanup or add small delay
 
-```javascript
-const { pipeline } = require('stream');
+```typescript
+import { pipeline, Transform, Writable } from 'stream';
 
 // Option 1: Let pipeline handle it
-pipeline(audioStream, transform, writable, (err) => {
-  // Pipeline handles cleanup
-  if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
-    console.error('Pipeline error:', err);
+pipeline(
+  audioStream,
+  transform,
+  writable,
+  (err) => {
+    if (err && (err as NodeJS.ErrnoException).code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+      console.error('Pipeline error:', err);
+    }
   }
-});
+);
 
 // Option 2: Use end event for cleanup
 audioStream.on('end', () => {
@@ -787,22 +973,26 @@ audioStream.on('end', () => {
 
 **Symptom:** Second stream fails with "Already capturing" error
 
-```javascript
+```typescript
+import { AudioCapture, AudioStream } from 'screencapturekit-audio-capture';
+
 const capture = new AudioCapture();
-const stream1 = capture.createAudioStream('Spotify');
-const stream2 = capture.createAudioStream('Safari');
+const stream1: AudioStream = capture.createAudioStream('Spotify');
+const stream2: AudioStream = capture.createAudioStream('Safari');
 // Error: Already capturing
 ```
 
 **Solution:** Use separate AudioCapture instances
 
-```javascript
+```typescript
+import { AudioCapture, AudioStream } from 'screencapturekit-audio-capture';
+
 // Each capture instance can only capture one app at a time
 const capture1 = new AudioCapture();
 const capture2 = new AudioCapture();
 
-const spotifyStream = capture1.createAudioStream('Spotify');
-const safariStream = capture2.createAudioStream('Safari');
+const spotifyStream: AudioStream = capture1.createAudioStream('Spotify');
+const safariStream: AudioStream = capture2.createAudioStream('Safari');
 
 // Now both streams work independently
 ```
@@ -814,38 +1004,42 @@ const safariStream = capture2.createAudioStream('Safari');
 **Causes & Solutions:**
 
 1. **Not consuming stream data (backpressure):**
-```javascript
+```typescript
+import { AudioCapture, AudioStream } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+
 // Bad: Stream buffers data indefinitely
-const audioStream = capture.createAudioStream('Spotify');
+const audioStream: AudioStream = capture.createAudioStream('Spotify');
 // No data consumption - memory grows!
 
 // Good: Consume the data
-audioStream.on('data', (chunk) => {
+audioStream.on('data', (chunk: Buffer) => {
   // Process or discard chunks
 });
 ```
 
 2. **Accumulating data without limits:**
-```javascript
+```typescript
 // Bad: Unbounded accumulation
-const chunks = [];
-audioStream.on('data', (chunk) => {
+const chunks: Buffer[] = [];
+audioStream.on('data', (chunk: Buffer) => {
   chunks.push(chunk); // Grows forever
 });
 
 // Good: Use a circular buffer or limit
 const MAX_CHUNKS = 100;
-const chunks = [];
-audioStream.on('data', (chunk) => {
-  chunks.push(chunk);
-  if (chunks.length > MAX_CHUNKS) {
-    chunks.shift(); // Remove oldest
+const limitedChunks: Buffer[] = [];
+audioStream.on('data', (chunk: Buffer) => {
+  limitedChunks.push(chunk);
+  if (limitedChunks.length > MAX_CHUNKS) {
+    limitedChunks.shift(); // Remove oldest
   }
 });
 ```
 
 3. **Not stopping stream when done:**
-```javascript
+```typescript
 // Always stop streams when done
 audioStream.stop();
 ```
@@ -856,26 +1050,32 @@ audioStream.stop();
 
 Object mode has small overhead due to metadata calculation:
 
-```javascript
+```typescript
+import { AudioCapture, AudioStream } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+
 // Faster: Normal mode (if you don't need metadata)
-const stream = capture.createAudioStream('Spotify');
+const streamFast: AudioStream = capture.createAudioStream('Spotify');
 
 // Slightly slower: Object mode (includes RMS, peak calculation)
-const stream = capture.createAudioStream('Spotify', { objectMode: true });
+const streamWithMeta: AudioStream = capture.createAudioStream('Spotify', { objectMode: true });
 ```
 
 #### 2. Process Data Efficiently
 
-```javascript
-const { Transform } = require('stream');
+```typescript
+import { Transform, TransformCallback } from 'stream';
+import type { AudioSample } from 'screencapturekit-audio-capture';
 
 class EfficientProcessor extends Transform {
+  private buffer: AudioSample[] = [];
+
   constructor() {
     super({ objectMode: true });
-    this.buffer = [];
   }
 
-  _transform(sample, encoding, callback) {
+  _transform(sample: AudioSample, encoding: BufferEncoding, callback: TransformCallback): void {
     // Batch processing is more efficient than per-sample processing
     this.buffer.push(sample);
 
@@ -887,7 +1087,7 @@ class EfficientProcessor extends Transform {
     callback();
   }
 
-  processBatch(samples) {
+  private processBatch(samples: AudioSample[]): void {
     // Process multiple samples at once
   }
 }
@@ -895,12 +1095,16 @@ class EfficientProcessor extends Transform {
 
 #### 3. Use Appropriate highWaterMark
 
-```javascript
+```typescript
+import { AudioCapture, AudioStream } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+
 // Default is good for most cases
-const stream = capture.createAudioStream('Spotify', { objectMode: true });
+const stream: AudioStream = capture.createAudioStream('Spotify', { objectMode: true });
 
 // For high-throughput scenarios, you can adjust (advanced)
-const stream = capture.createAudioStream('Spotify', {
+const streamAdvanced: AudioStream = capture.createAudioStream('Spotify', {
   objectMode: true,
   // Note: highWaterMark is set internally, but you can access via stream properties
 });
@@ -910,22 +1114,23 @@ const stream = capture.createAudioStream('Spotify', {
 
 Here's a complete, production-ready example with all best practices:
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
-const { Transform, pipeline } = require('stream');
+```typescript
+import { AudioCapture, AudioStream, AudioCaptureError, ErrorCode, type AudioSample, type ApplicationInfo } from 'screencapturekit-audio-capture';
+import { Transform, TransformCallback, pipeline } from 'stream';
 
 class AudioProcessor extends Transform {
+  private sampleCount = 0;
+
   constructor() {
     super({ objectMode: true });
-    this.sampleCount = 0;
   }
 
-  _transform(sample, encoding, callback) {
+  _transform(sample: AudioSample, encoding: BufferEncoding, callback: TransformCallback): void {
     this.sampleCount++;
 
     // Only process audio above threshold
     if (sample.rms > 0.01) {
-      const db = AudioCapture.rmsToDb(sample.rms);
+      const db: number = AudioCapture.rmsToDb(sample.rms);
       console.log(`Sample ${this.sampleCount}: ${db.toFixed(1)} dB`);
 
       // Process the audio data
@@ -937,18 +1142,18 @@ class AudioProcessor extends Transform {
     callback();
   }
 
-  processAudio(buffer) {
+  private processAudio(buffer: Buffer): void {
     // Your audio processing logic here
   }
 }
 
-function main() {
+function main(): void {
   const capture = new AudioCapture();
 
   // Find app with fallback
-  let app = capture.findApplication('Spotify');
+  let app: ApplicationInfo | null = capture.findApplication('Spotify');
   if (!app) {
-    const audioApps = capture.getAudioApps();
+    const audioApps: ApplicationInfo[] = capture.getAudioApps();
     if (audioApps.length === 0) {
       console.error('No applications available');
       process.exit(1);
@@ -958,7 +1163,7 @@ function main() {
   }
 
   // Create stream with options
-  const audioStream = capture.createAudioStream(app.applicationName, {
+  const audioStream: AudioStream = capture.createAudioStream(app.applicationName, {
     objectMode: true,
     minVolume: 0.01,
     format: 'float32'
@@ -980,11 +1185,11 @@ function main() {
   );
 
   // Handle errors
-  audioStream.on('error', (error) => {
+  audioStream.on('error', (error: Error) => {
     console.error('Stream error:', error.message);
-    if (error.code === 'ERR_APP_NOT_FOUND') {
+    if (AudioCaptureError.isAudioCaptureError(error) && error.code === ErrorCode.APP_NOT_FOUND) {
       console.log('Available apps:',
-        capture.getApplications().map(a => a.applicationName).join(', ')
+        capture.getApplications().map((a) => a.applicationName).join(', ')
       );
     }
   });
@@ -1013,43 +1218,46 @@ High-level event-based API (recommended).
 
 #### Methods
 
-##### `getApplications(options?: object): AppInfo[]`
+##### `getApplications(options?: object): ApplicationInfo[]`
 
 Get list of all capturable applications. By default, filters out apps with empty names (helper processes).
 
 **Options:**
 - `includeEmpty` (boolean): Include apps with empty `applicationName` (default: `false`)
 
-```javascript
+```typescript
+import { AudioCapture, type ApplicationInfo } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+
 // Get all apps (filters empty names by default)
-const apps = capture.getApplications();
-// Returns: [{ processId, bundleIdentifier, applicationName }, ...]
+const apps: ApplicationInfo[] = capture.getApplications();
 
 // Include apps with empty names (helper processes, background services)
-const allApps = capture.getApplications({ includeEmpty: true });
+const allApps: ApplicationInfo[] = capture.getApplications({ includeEmpty: true });
 ```
 
-##### `findApplication(identifier: string): AppInfo | null`
+##### `findApplication(identifier: string): ApplicationInfo | null`
 
 Find application by name or bundle ID (case-insensitive).
 
-```javascript
-const spotify = capture.findApplication('Spotify');
-const safari = capture.findApplication('com.apple.Safari');
+```typescript
+const spotify: ApplicationInfo | null = capture.findApplication('Spotify');
+const safari: ApplicationInfo | null = capture.findApplication('com.apple.Safari');
 ```
 
-##### `findByName(name: string): AppInfo | null`
+##### `findByName(name: string): ApplicationInfo | null`
 
 Find application by name (alias for `findApplication`, case-insensitive search).
 
-```javascript
-const app = capture.findByName('Spotify');
+```typescript
+const app: ApplicationInfo | null = capture.findByName('Spotify');
 if (app) {
   console.log(`Found: ${app.applicationName} (PID: ${app.processId})`);
 }
 ```
 
-##### `getAudioApps(options?: object): AppInfo[]`
+##### `getAudioApps(options?: object): ApplicationInfo[]`
 
 Get only applications likely to produce audio. Filters out system apps and utilities, and optionally sorts by recent activity.
 
@@ -1059,10 +1267,10 @@ Get only applications likely to produce audio. Filters out system apps and utili
 - `sortByActivity` (boolean): Sort by recent audio activity (requires `enableActivityTracking()`, default: `false`)
 - `appList` (Array): Use a prefetched app list instead of calling `getApplications()` (default: `null`)
 
-```javascript
+```typescript
 // Get audio apps (filters system apps and empty names)
-const audioApps = capture.getAudioApps();
-console.log('Audio apps:', audioApps.map(a => a.applicationName));
+const audioApps: ApplicationInfo[] = capture.getAudioApps();
+console.log('Audio apps:', audioApps.map((a) => a.applicationName));
 // Example output: ['Spotify', 'Safari', 'Music', 'Zoom']
 // (excludes Finder, Terminal, System Preferences, AutoFill helpers, etc.)
 
@@ -1078,12 +1286,12 @@ const audioApps = capture.getAudioApps({ appList: permissionStatus.apps });
 ```
 
 
-##### `getApplicationByPid(processId: number): AppInfo | null`
+##### `getApplicationByPid(processId: number): ApplicationInfo | null`
 
 Get application info by process ID.
 
-```javascript
-const app = capture.getApplicationByPid(12345);
+```typescript
+const app: ApplicationInfo | null = capture.getApplicationByPid(12345);
 if (app) {
   console.log(`Found ${app.applicationName}`);
 }
@@ -1093,10 +1301,14 @@ if (app) {
 
 Need to capture audio from a single window or an entire display instead of a whole application? Use the new helpers to inspect available targets and start a capture against them:
 
-```javascript
+```typescript
+import { AudioCapture, type WindowInfo, type DisplayInfo } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+
 // List windows (filter to on-screen windows that have a title)
-const windows = capture.getWindows({ onScreenOnly: true, requireTitle: true });
-windows.forEach(win => {
+const windows: WindowInfo[] = capture.getWindows({ onScreenOnly: true, requireTitle: true });
+windows.forEach((win) => {
   console.log(`#${win.windowId}: ${win.title} (${win.owningApplicationName})`);
 });
 
@@ -1114,7 +1326,7 @@ capture.captureDisplay(internalDisplay.displayId);
 
 `getWindows()` and `getDisplays()` return the raw ScreenCaptureKit metadata (ID, frame, layer, owning process, etc.) so you can build custom UIs for choosing targets. `captureWindow()` and `captureDisplay()` accept the IDs returned from those helpers and otherwise share the same options as `startCapture()`.
 
-##### `selectApp(identifiers?: string | number | Array, options?: Object): AppInfo | null`
+##### `selectApp(identifiers?: string | number | Array, options?: Object): ApplicationInfo | null`
 
 Smart app selection with multiple fallback strategies. Tries exact name, PID, bundle ID, and partial matches.
 
@@ -1128,35 +1340,34 @@ Smart app selection with multiple fallback strategies. Tries exact name, PID, bu
 
 **Returns:** Application info or `null` (unless `throwOnNotFound` is `true`)
 
-```javascript
+```typescript
+import { AudioCapture, AudioCaptureError, ErrorCode, type ApplicationInfo } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+
 // Try multiple apps in order
-const app = capture.selectApp(['Spotify', 'Music', 'Safari']);
+const app: ApplicationInfo | null = capture.selectApp(['Spotify', 'Music', 'Safari']);
 
-// Get first available audio app
-const app = capture.selectApp();
+// Get first audio app if none specified
+const firstApp: ApplicationInfo | null = capture.selectApp();
 
-// Try PID or name with error throw
-const app = capture.selectApp(12345, { throwOnNotFound: true });
-
-// Partial name matching works
-const app = capture.selectApp('spot'); // Finds "Spotify"
-
-// Include system apps
-const app = capture.selectApp('Terminal', { audioOnly: false });
-
-// Reuse prefetched app list for efficiency
+// Use a prefetched list to avoid redundant native calls
 const permissionStatus = AudioCapture.verifyPermissions();
-const app = capture.selectApp(['Spotify', 'Music'], {
-  appList: permissionStatus.apps,
-  fallbackToFirst: true // Use first available if none match
+const appFromList: ApplicationInfo | null = capture.selectApp(['Spotify', 'Safari'], {
+  appList: permissionStatus.apps
 });
 
-// With activity tracking for smart selection
-capture.enableActivityTracking();
-const app = capture.selectApp(['Spotify', 'Music'], {
-  sortByActivity: true, // Prefer apps currently playing audio
-  fallbackToFirst: true
-});
+// Fallback to first app if no match
+const fallbackApp: ApplicationInfo | null = capture.selectApp(['Spotify', 'Music'], { fallbackToFirst: true });
+
+// Throw on failure for cleaner error handling
+try {
+  const foundApp: ApplicationInfo = capture.selectApp(['Spotify'], { throwOnNotFound: true })!;
+} catch (err) {
+  if (AudioCaptureError.isAudioCaptureError(err) && err.code === ErrorCode.APP_NOT_FOUND) {
+    console.log('Try:', err.details.suggestion);
+  }
+}
 ```
 
 ##### `enableActivityTracking(options?: object): void`
@@ -1166,23 +1377,19 @@ Enable background tracking of audio activity for smarter app filtering and sorti
 **Options:**
 - `decayMs` (number): Remove apps from cache after this many ms of inactivity (default: `30000`)
 
-```javascript
+```typescript
 // Enable tracking
 capture.enableActivityTracking();
 
-// Later, get apps sorted by recent audio activity
-const apps = capture.getAudioApps({ sortByActivity: true });
-// Apps currently producing audio appear first
-
-// Custom decay time (remove from cache after 1 minute of silence)
-capture.enableActivityTracking({ decayMs: 60000 });
+// Or with custom decay time
+capture.enableActivityTracking({ decayMs: 60000 }); // 60 second decay
 ```
 
 ##### `disableActivityTracking(): void`
 
 Disable activity tracking and clear the cache.
 
-```javascript
+```typescript
 capture.disableActivityTracking();
 ```
 
@@ -1195,14 +1402,12 @@ Get activity tracking status and statistics about recently active apps.
 - `trackedApps` (number): Number of apps currently in cache
 - `recentApps` (Array): Recently active apps with metadata
 
-```javascript
+```typescript
 const info = capture.getActivityInfo();
 console.log(`Tracking enabled: ${info.enabled}`);
 console.log(`Active apps: ${info.trackedApps}`);
-
-info.recentApps.forEach(app => {
-  console.log(`PID ${app.processId}: avg RMS ${app.avgRMS.toFixed(3)}, ` +
-              `last seen ${app.ageMs}ms ago`);
+info.recentApps.forEach((app) => {
+  console.log(`PID ${app.processId}: avg RMS ${app.avgRMS}, last seen ${app.ageMs}ms ago`);
 });
 ```
 
@@ -1217,16 +1422,17 @@ Verify screen recording permissions before attempting capture. Returns a status 
 - `remediation` (string, optional): Instructions to fix permission issues
 - `availableApps` (number, optional): Number of apps found (if granted)
 
-```javascript
-const status = AudioCapture.verifyPermissions();
+```typescript
+import { AudioCapture, type PermissionStatus } from 'screencapturekit-audio-capture';
+
+const status: PermissionStatus = AudioCapture.verifyPermissions();
 if (!status.granted) {
   console.error(status.message);
   console.log(status.remediation);
   process.exit(1);
 } else {
-  console.log(status.message); // "Screen Recording permission granted. Found X applications."
-
-  // Reuse the prefetched app list to avoid redundant native calls
+  console.log(`Permission granted, found ${status.availableApps} apps`);
+  // Optionally reuse status.apps to avoid re-fetching
   const audioApps = capture.getAudioApps({ appList: status.apps });
   const selectedApp = capture.selectApp(['Spotify', 'Music'], {
     appList: status.apps,
@@ -1242,7 +1448,7 @@ Get detailed status of the current capture session. Returns `null` if not captur
 **Returns (when capturing):**
 - `capturing` (boolean): Always `true` when not null
 - `processId` (number | null): Process ID being captured (may be `null` for display capture)
-- `app` (AppInfo | null): Application info (if available)
+- `app` (ApplicationInfo | null): Application info (if available)
 - `window` (WindowInfo | null): Window info when capturing a single window
 - `display` (DisplayInfo | null): Display info when capturing a display
 - `targetType` (`'application' | 'window' | 'display'`): Target kind
@@ -1250,21 +1456,18 @@ Get detailed status of the current capture session. Returns `null` if not captur
   - `minVolume` (number): Volume threshold
   - `format` (string): Audio format ('float32' or 'int16')
 
-```javascript
-const status = capture.getStatus();
+```typescript
+import { AudioCapture, type CaptureStatus } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+const status: CaptureStatus | null = capture.getStatus();
 if (status) {
   console.log(`Capturing type: ${status.targetType}`);
+  console.log(`Process ID: ${status.processId}`);
   if (status.app) {
-    console.log(`Application: ${status.app.applicationName}`);
+    console.log(`App: ${status.app.applicationName}`);
   }
-  if (status.window) {
-    console.log(`Window: ${status.window.title}`);
-  }
-  if (status.display) {
-    console.log(`Display: ${status.display.displayId}`);
-  }
-  console.log(`Format: ${status.config.format}`);
-  console.log(`Min volume: ${status.config.minVolume}`);
+  console.log(`Config: format=${status.config.format}, minVolume=${status.config.minVolume}`);
 } else {
   console.log('Not currently capturing');
 }
@@ -1294,14 +1497,18 @@ Start capturing audio. Accepts app name, bundle ID, process ID, or an app object
 - `bufferSize` (number): Buffer size for audio processing in frames. Smaller values = lower latency but higher CPU usage. Default: system default
 - `excludeCursor` (boolean): Exclude cursor from capture (reserved for future video features). Default: true
 
-```javascript
+```typescript
+import { AudioCapture, type ApplicationInfo } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+
 // Basic usage
 capture.startCapture('Music');                    // By name
 capture.startCapture('com.spotify.client');       // By bundle ID
-capture.startCapture(12345);                      // By PID
+capture.startCapture(12345);                      // By process ID
 
 // Pass app object directly (avoids redundant lookups)
-const app = capture.selectApp(['Spotify', 'Music']);
+const app: ApplicationInfo = capture.selectApp(['Spotify', 'Music']);
 capture.startCapture(app);                        // By app object
 
 // With volume threshold (only emit when audio is present)
@@ -1339,9 +1546,9 @@ capture.startCapture('Spotify', {
 try {
   capture.startCapture('Spotify', { minVolume: 0.01 });
 } catch (err) {
-  if (err.code === ErrorCodes.APP_NOT_FOUND) {
+  if (err.code === ErrorCode.APP_NOT_FOUND) {
     console.log('Available apps:', err.details.availableApps);
-  } else if (err.code === ErrorCodes.PERMISSION_DENIED) {
+  } else if (err.code === ErrorCode.PERMISSION_DENIED) {
     console.log(err.details.suggestion);
   } else {
     console.error('Failed to start:', err.message);
@@ -1390,7 +1597,7 @@ Create a readable stream for audio capture. Provides a stream-based alternative 
 **Options:**
 
 *Processing Options:*
-- `minVolume` (number): Minimum RMS volume threshold (0.0-1.0)
+- `minVolume` (number): Minimum RMS volume threshold
 - `format` (string): Audio format - `'float32'` (default) or `'int16'`
 - `objectMode` (boolean): Enable object mode to receive full sample objects instead of just raw audio data (default: false)
 
@@ -1402,9 +1609,13 @@ Create a readable stream for audio capture. Provides a stream-based alternative 
 
 **Returns:** `AudioStream` - A Node.js Readable stream
 
-```javascript
+```typescript
+import { AudioCapture, AudioStream } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+
 // Basic usage - stream raw audio buffers
-const audioStream = capture.createAudioStream('Spotify');
+const audioStream: AudioStream = capture.createAudioStream('Spotify');
 audioStream.pipe(myProcessor);
 
 // Object mode - stream full sample objects with metadata
@@ -1458,11 +1669,14 @@ Create a pre-configured stream for Speech-to-Text (STT) engines. Automatically c
 
 **Returns:** `STTConverter` - Transform stream ready to pipe to STT engine
 
-```javascript
-const { pipeline } = require('stream');
+```typescript
+import { AudioCapture, STTConverter } from 'screencapturekit-audio-capture';
+import { pipeline } from 'stream';
+
+const capture = new AudioCapture();
 
 // Simple - auto-converts to Int16 mono
-const sttStream = capture.createSTTStream('Safari');
+const sttStream: STTConverter = capture.createSTTStream('Safari');
 sttStream.pipe(yourSTTEngine);
 
 // With fallback apps
@@ -1498,21 +1712,22 @@ sttStream.stop();
 
 Convert Buffer to Float32Array for easier audio processing. This is the recommended way to work with audio data.
 
-```javascript
-capture.on('audio', (sample) => {
+```typescript
+capture.on('audio', (sample: AudioSample) => {
   // Convert Buffer to Float32Array
-  const float32 = AudioCapture.bufferToFloat32Array(sample.data);
+  const float32: Float32Array = AudioCapture.bufferToFloat32Array(sample.data);
 
-  // Now you can easily process the audio samples
-  console.log(`Got ${float32.length} samples`);
-  console.log(`First sample value: ${float32[0]}`);
+  // Now you can access individual samples
+  for (let i = 0; i < float32.length; i++) {
+    const value: number = float32[i]; // Range: -1.0 to 1.0
+  }
 
-  // Calculate custom metrics
+  // Calculate average amplitude
   let sum = 0;
   for (let i = 0; i < float32.length; i++) {
     sum += Math.abs(float32[i]);
   }
-  const avgAmplitude = sum / float32.length;
+  const avgAmplitude: number = sum / float32.length;
   console.log(`Average amplitude: ${avgAmplitude}`);
 });
 ```
@@ -1521,26 +1736,26 @@ capture.on('audio', (sample) => {
 
 Convert RMS value (0.0-1.0) to decibels.
 
-```javascript
-const db = AudioCapture.rmsToDb(0.5); // Returns: -6.02 dB
+```typescript
+const db: number = AudioCapture.rmsToDb(0.5); // Returns: -6.02 dB
 ```
 
 ##### `AudioCapture.peakToDb(peak: number): number`
 
 Convert peak value (0.0-1.0) to decibels.
 
-```javascript
-const peakDb = AudioCapture.peakToDb(0.5); // Returns: -6.02 dB
+```typescript
+const peakDb: number = AudioCapture.peakToDb(0.5); // Returns: -6.02 dB
 ```
 
 ##### `AudioCapture.calculateDb(samples: Buffer, method?: 'rms' | 'peak'): number`
 
 Calculate dB level from audio samples.
 
-```javascript
-capture.on('audio', (sample) => {
-  const rmsDb = AudioCapture.calculateDb(sample.data, 'rms');
-  const peakDb = AudioCapture.calculateDb(sample.data, 'peak');
+```typescript
+capture.on('audio', (sample: AudioSample) => {
+  const rmsDb: number = AudioCapture.calculateDb(sample.data, 'rms');
+  const peakDb: number = AudioCapture.calculateDb(sample.data, 'peak');
   console.log(`RMS: ${rmsDb.toFixed(1)} dB, Peak: ${peakDb.toFixed(1)} dB`);
 });
 ```
@@ -1554,12 +1769,12 @@ Create a WAV file from PCM audio data. Returns a complete WAV file buffer that c
 - `channels` (number, required): Number of channels (e.g., 2 for stereo)
 - `format` (string): Audio format - `'float32'` (default) or `'int16'`
 
-```javascript
-const fs = require('fs');
+```typescript
+import fs from 'fs';
 
-capture.on('audio', (sample) => {
+capture.on('audio', (sample: AudioSample) => {
   // Create WAV file from audio sample
-  const wavBuffer = AudioCapture.writeWav(sample.data, {
+  const wavBuffer: Buffer = AudioCapture.writeWav(sample.data, {
     sampleRate: sample.sampleRate,
     channels: sample.channels,
     format: sample.format
@@ -1578,9 +1793,9 @@ capture.on('audio', (sample) => {
 
 Emitted when capture starts.
 
-```javascript
+```typescript
 capture.on('start', ({ processId, app }) => {
-  console.log(`Capturing from ${app.applicationName}`);
+  console.log(`Capturing from ${app?.applicationName}`);
 });
 ```
 
@@ -1588,21 +1803,18 @@ capture.on('start', ({ processId, app }) => {
 
 Emitted for each audio sample (typically 160ms chunks at 48kHz).
 
-```javascript
-capture.on('audio', (sample) => {
+```typescript
+capture.on('audio', (sample: AudioSample) => {
   // sample.data: Buffer (Float32 or Int16 PCM audio, depending on format option)
   // sample.sampleRate: 48000
   // sample.channels: 2
-  // sample.timestamp: seconds (timestamp of the audio sample)
+  // sample.timestamp: 123.456
   // sample.format: 'float32' or 'int16'
-  // sample.sampleCount: total number of samples in buffer
-  // sample.durationMs: duration in milliseconds
-  // sample.rms: RMS volume level (0.0-1.0)
-  // sample.peak: peak volume level (0.0-1.0)
-
-  // Working with the audio data:
-  const float32 = AudioCapture.bufferToFloat32Array(sample.data);
-  console.log(`Got ${float32.length} samples`);
+  // sample.sampleCount: 15360 (total samples)
+  // sample.framesCount: 7680 (samples per channel)
+  // sample.durationMs: 160 (approximate)
+  // sample.rms: 0.123 (root mean square volume)
+  // sample.peak: 0.456 (peak volume)
 });
 ```
 
@@ -1610,7 +1822,7 @@ capture.on('audio', (sample) => {
 
 Emitted when capture stops.
 
-```javascript
+```typescript
 capture.on('stop', ({ processId }) => {
   console.log('Capture stopped');
 });
@@ -1620,8 +1832,8 @@ capture.on('stop', ({ processId }) => {
 
 Emitted on errors.
 
-```javascript
-capture.on('error', (err) => {
+```typescript
+capture.on('error', (err: Error) => {
   console.error('Error:', err.message);
 });
 ```
@@ -1641,11 +1853,12 @@ Custom error class thrown by the SDK.
 
 Import `ErrorCodes` for reliable error checking:
 
-```javascript
-const { ErrorCodes } = require('screencapturekit-audio-capture');
+```typescript
+import { AudioCapture, AudioCaptureError, ErrorCode } from 'screencapturekit-audio-capture';
 
-capture.on('error', (err) => {
-  if (err.code === ErrorCodes.APP_NOT_FOUND) {
+const capture = new AudioCapture();
+capture.on('error', (err: AudioCaptureError) => {
+  if (err.code === ErrorCode.APP_NOT_FOUND) {
     // Handle missing app
   }
 });
@@ -1662,29 +1875,31 @@ capture.on('error', (err) => {
 
 **Using Error Codes:**
 
-```javascript
-const { ErrorCodes } = require('screencapturekit-audio-capture');
+```typescript
+import { AudioCapture, AudioCaptureError, ErrorCode } from 'screencapturekit-audio-capture';
 
-capture.on('error', (err) => {
+const capture = new AudioCapture();
+
+capture.on('error', (err: AudioCaptureError) => {
   switch (err.code) {
-    case ErrorCodes.PERMISSION_DENIED:
+    case ErrorCode.PERMISSION_DENIED:
       console.log('Grant Screen Recording permission');
       break;
-    case ErrorCodes.APP_NOT_FOUND:
+    case ErrorCode.APP_NOT_FOUND:
       console.log('App not found:', err.details.requestedApp);
       console.log('Available:', err.details.availableApps);
       break;
-    case ErrorCodes.ALREADY_CAPTURING:
+    case ErrorCode.ALREADY_CAPTURING:
       console.log('Stop current capture first');
       capture.stopCapture();
       break;
-    case ErrorCodes.PROCESS_NOT_FOUND:
+    case ErrorCode.PROCESS_NOT_FOUND:
       console.log('Process ID not found:', err.details.requestedPid);
       break;
-    case ErrorCodes.CAPTURE_FAILED:
+    case ErrorCode.CAPTURE_FAILED:
       console.log('Native capture failed:', err.details.suggestion);
       break;
-    case ErrorCodes.INVALID_ARGUMENT:
+    case ErrorCode.INVALID_ARGUMENT:
       console.log('Invalid argument type:', err.details.receivedType);
       console.log('Expected:', err.details.expectedTypes);
       break;
@@ -1704,8 +1919,8 @@ Readable stream for audio capture. Extends Node.js `Readable` stream.
 
 Stop the stream and underlying capture.
 
-```javascript
-const audioStream = capture.createAudioStream('Spotify');
+```typescript
+const audioStream: AudioStream = capture.createAudioStream('Spotify');
 // ... use the stream
 audioStream.stop();
 ```
@@ -1714,8 +1929,10 @@ audioStream.stop();
 
 Get information about the current capture (same structure as `AudioCapture#getCurrentCapture`).
 
-```javascript
-const info = audioStream.getCurrentCapture();
+```typescript
+import type { CaptureInfo } from 'screencapturekit-audio-capture';
+
+const info: CaptureInfo | null = audioStream.getCurrentCapture();
 if (info) {
   console.log(`Target type: ${info.targetType}`);
 }
@@ -1725,15 +1942,18 @@ if (info) {
 
 AudioStream extends Node.js Readable, so it emits all standard stream events:
 
-```javascript
-const audioStream = capture.createAudioStream('Spotify');
+```typescript
+import { AudioCapture, AudioStream } from 'screencapturekit-audio-capture';
 
-audioStream.on('data', (chunk) => {
+const capture = new AudioCapture();
+const audioStream: AudioStream = capture.createAudioStream('Spotify');
+
+audioStream.on('data', (chunk: Buffer) => {
   // Chunk is a Buffer (or sample object if objectMode is true)
   console.log(`Received ${chunk.length} bytes`);
 });
 
-audioStream.on('error', (error) => {
+audioStream.on('error', (error: Error) => {
   console.error('Stream error:', error);
 });
 
@@ -1750,11 +1970,12 @@ audioStream.on('close', () => {
 
 For advanced users who need direct access to the native binding:
 
-```javascript
-const { ScreenCaptureKit } = require('screencapturekit-audio-capture');
+```typescript
+import { ScreenCaptureKit } from 'screencapturekit-audio-capture';
+
 const captureKit = new ScreenCaptureKit();
 
-// Get apps (returns basic AppInfo array)
+// Get apps (returns basic ApplicationInfo array)
 const apps = captureKit.getAvailableApps();
 
 // Configuration object for native capture
@@ -1775,7 +1996,7 @@ captureKit.startCapture(processId, config, (sample) => {
 
 // Stop and check status
 captureKit.stopCapture();
-const isCapturing = captureKit.isCapturing();
+const isCapturing: boolean = captureKit.isCapturing();
 ```
 
 **When to use:**
@@ -1794,33 +2015,44 @@ const isCapturing = captureKit.isCapturing();
 
 ## TypeScript
 
-Full TypeScript support with included definitions:
+The SDK is written in TypeScript and provides full type definitions. All types are exported from the main module:
 
 ```typescript
-import AudioCapture, {
+import {
+  AudioCapture,
   AudioStream,
   STTConverter,
-  EnhancedAudioSample,
-  AppInfo,
-  WindowInfo,
-  DisplayInfo,
-  CaptureInfo,
-  StreamOptions,
-  CaptureOptions,
-  ErrorCodes,
-  AudioCaptureError
+  AudioCaptureError,
+  ErrorCode,
+  // Type imports
+  type AudioSample,
+  type ApplicationInfo,
+  type WindowInfo,
+  type DisplayInfo,
+  type CaptureInfo,
+  type CaptureStatus,
+  type AudioStreamOptions,
+  type CaptureOptions,
+  type PermissionStatus,
 } from 'screencapturekit-audio-capture';
 
 const capture = new AudioCapture();
 
-// Event-based API
-capture.on('audio', (sample: EnhancedAudioSample) => {
+// Type-safe permission verification
+const status: PermissionStatus = AudioCapture.verifyPermissions();
+if (!status.granted) {
+  console.error(status.message);
+  process.exit(1);
+}
+
+// Event-based API with typed samples
+capture.on('audio', (sample: AudioSample) => {
   const db: number = AudioCapture.rmsToDb(sample.rms);
-  console.log(`Volume: ${db.toFixed(1)} dB`);
+  console.log(`Volume: ${db.toFixed(1)} dB, Duration: ${sample.durationMs}ms`);
 });
 
-// Stream-based API
-const streamOptions: StreamOptions = {
+// Stream-based API with typed options
+const streamOptions: AudioStreamOptions = {
   minVolume: 0.01,
   format: 'float32',
   objectMode: true
@@ -1828,12 +2060,12 @@ const streamOptions: StreamOptions = {
 
 const audioStream: AudioStream = capture.createAudioStream('Spotify', streamOptions);
 
-audioStream.on('data', (sample: EnhancedAudioSample) => {
+audioStream.on('data', (sample: AudioSample) => {
   console.log(`RMS: ${sample.rms}, Peak: ${sample.peak}`);
 });
 
-// Finding apps
-const app: AppInfo | null = capture.findApplication('Safari');
+// Finding apps with proper types
+const app: ApplicationInfo | null = capture.findApplication('Safari');
 if (app) {
   capture.startCapture(app.processId);
 }
@@ -1841,15 +2073,40 @@ if (app) {
 // Window/display helpers are fully typed
 const windows: WindowInfo[] = capture.getWindows({ onScreenOnly: true });
 const displays: DisplayInfo[] = capture.getDisplays();
-const status: CaptureInfo | null = capture.getStatus();
+const captureStatus: CaptureStatus | null = capture.getStatus();
 
-// Error handling with types
+// Error handling with ErrorCode enum
 capture.on('error', (err: AudioCaptureError) => {
-  if (err.code === ErrorCodes.APP_NOT_FOUND) {
+  if (err.code === ErrorCode.APP_NOT_FOUND) {
     console.log('Available apps:', err.details.availableApps);
   }
 });
+
+// Type guard for error checking
+try {
+  capture.startCapture('NonexistentApp');
+} catch (error) {
+  if (AudioCaptureError.isAudioCaptureError(error)) {
+    console.error(`Error [${error.code}]:`, error.message);
+  }
+}
 ```
+
+### Available Types
+
+| Type | Description |
+|------|-------------|
+| `AudioSample` | Audio sample with data, metadata (rms, peak, duration, etc.) |
+| `ApplicationInfo` | Application info (processId, bundleIdentifier, applicationName) |
+| `WindowInfo` | Window info (windowId, title, owningProcessId, frame, etc.) |
+| `DisplayInfo` | Display info (displayId, width, height, frame, etc.) |
+| `CaptureInfo` | Current capture target info |
+| `CaptureStatus` | Full capture status including config |
+| `PermissionStatus` | Permission verification result |
+| `CaptureOptions` | Options for startCapture() |
+| `AudioStreamOptions` | Options for createAudioStream() |
+| `STTStreamOptions` | Options for createSTTStream() |
+| `ErrorCode` | Enum of error codes (APP_NOT_FOUND, PERMISSION_DENIED, etc.) |
 
 ## Working with Audio Data
 
@@ -1857,10 +2114,14 @@ capture.on('error', (err: AudioCaptureError) => {
 
 Audio samples are provided as Node.js `Buffer` objects containing Float32 PCM audio data by default. Here's how to work with them:
 
-```javascript
-capture.on('audio', (sample) => {
+```typescript
+import { AudioCapture, type AudioSample } from 'screencapturekit-audio-capture';
+
+const capture = new AudioCapture();
+
+capture.on('audio', (sample: AudioSample) => {
   // Method 1: Use the helper (recommended)
-  const float32 = AudioCapture.bufferToFloat32Array(sample.data);
+  const float32: Float32Array = AudioCapture.bufferToFloat32Array(sample.data);
 
   // Method 2: Manual conversion
   const float32Manual = new Float32Array(
@@ -1878,10 +2139,10 @@ capture.on('audio', (sample) => {
 
 If you need Int16 audio (common for many audio libraries), use the `format` option:
 
-```javascript
+```typescript
 capture.startCapture('Spotify', { format: 'int16' });
 
-capture.on('audio', (sample) => {
+capture.on('audio', (sample: AudioSample) => {
   // sample.data is now Int16 format
   const int16 = new Int16Array(
     sample.data.buffer,
@@ -1898,11 +2159,11 @@ capture.on('audio', (sample) => {
 
 Use the `minVolume` option to only receive audio when sound is actually present:
 
-```javascript
+```typescript
 // Only emit audio events when RMS volume > 0.01
 capture.startCapture('Spotify', { minVolume: 0.01 });
 
-capture.on('audio', (sample) => {
+capture.on('audio', (sample: AudioSample) => {
   // This will only be called when audio is present
   console.log(`Active audio: ${AudioCapture.rmsToDb(sample.rms).toFixed(1)} dB`);
 });
@@ -1921,7 +2182,7 @@ capture.on('audio', (sample) => {
 4. **Important:** Restart your terminal completely for changes to take effect
 
 **Verification:**
-```javascript
+```typescript
 const apps = capture.getApplications();
 if (apps.length === 0) {
   console.error('❌ No apps found - Screen Recording permission likely not granted');
@@ -1939,19 +2200,19 @@ if (apps.length === 0) {
 1. **Check if the app is running:** The application must be actively running
 2. **Check spelling:** Application names are case-insensitive but must match
 3. **List available apps:**
-   ```javascript
+   ```typescript
    const apps = capture.getApplications();
-   console.log('Available:', apps.map(a => a.applicationName).join(', '));
+   console.log('Available:', apps.map((a) => a.applicationName).join(', '));
    ```
 4. **Use bundle ID instead:**
-   ```javascript
+   ```typescript
    // More reliable than app name
    capture.startCapture('com.spotify.client');
    ```
 5. **Filter for audio apps only:**
-   ```javascript
+   ```typescript
    const audioApps = capture.getAudioApps();
-   console.log('Audio apps:', audioApps.map(a => a.applicationName));
+   console.log('Audio apps:', audioApps.map((a) => a.applicationName));
    ```
 
 ### No audio samples received
@@ -1964,7 +2225,7 @@ if (apps.length === 0) {
 3. **Verify the app has visible windows** - Some ScreenCaptureKit limitations require windows
 4. **Try a different app** - Test with Music, Safari, or Spotify to verify your setup
 5. **Check volume threshold:** If you set `minVolume`, ensure audio is loud enough
-   ```javascript
+   ```typescript
    // Remove volume threshold for testing
    capture.startCapture('Spotify');  // No options
    ```
@@ -1974,15 +2235,18 @@ if (apps.length === 0) {
 **Symptom:** Confused about how to process `sample.data`
 
 **Solution:** Use the helper method:
-```javascript
-capture.on('audio', (sample) => {
-  // Convert Buffer to Float32Array
-  const float32 = AudioCapture.bufferToFloat32Array(sample.data);
+```typescript
+import { AudioCapture, type AudioSample } from 'screencapturekit-audio-capture';
 
-  // Now you can work with it like a normal array
+const capture = new AudioCapture();
+
+capture.on('audio', (sample: AudioSample) => {
+  // Convert Buffer to Float32Array
+  const float32: Float32Array = AudioCapture.bufferToFloat32Array(sample.data);
+
+  // Access individual samples
   for (let i = 0; i < float32.length; i++) {
-    const sampleValue = float32[i];  // Range: -1.0 to 1.0
-    // Process audio...
+    const sampleValue: number = float32[i]; // Range: -1.0 to 1.0
   }
 });
 ```
@@ -1994,7 +2258,7 @@ capture.on('audio', (sample) => {
 **Common Issues & Solutions:**
 
 1. **Stream doesn't start capturing:**
-   ```javascript
+   ```typescript
    // Won't start - missing data listener
    const stream = capture.createAudioStream('Spotify');
    stream.on('error', (err) => console.error(err));
@@ -2004,7 +2268,7 @@ capture.on('audio', (sample) => {
    ```
 
 2. **"Already capturing" error when creating multiple streams:**
-   ```javascript
+   ```typescript
    // Wrong: Same capture instance
    const stream1 = capture.createAudioStream('Spotify');
    const stream2 = capture.createAudioStream('Safari'); // Error!
@@ -2017,7 +2281,7 @@ capture.on('audio', (sample) => {
    ```
 
 3. **Memory grows over time:**
-   ```javascript
+   ```typescript
    // Problem: Not consuming data
    const stream = capture.createAudioStream('Spotify');
    // No data handler = buffering
@@ -2029,19 +2293,19 @@ capture.on('audio', (sample) => {
    ```
 
 4. **"stream.push() after EOF" error:**
-   ```javascript
+   ```typescript
    // Use pipeline for proper cleanup
-   const { pipeline } = require('stream');
+   import { pipeline } from 'stream';
 
    pipeline(stream, transform, writable, (err) => {
-     if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+     if (err && (err as NodeJS.ErrnoException).code !== 'ERR_STREAM_PREMATURE_CLOSE') {
        console.error(err);
      }
    });
    ```
 
 5. **No data events in object mode:**
-   ```javascript
+   ```typescript
    // Check if app is producing audio
    const stream = capture.createAudioStream('Spotify', {
      objectMode: true,
@@ -2119,10 +2383,10 @@ See [`examples/README.md`](examples/README.md) for a deeper walkthrough of each 
 
 Use the stream API to pipe audio through transform streams:
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
-const { Transform, pipeline } = require('stream');
-const fs = require('fs');
+```typescript
+import { AudioCapture, AudioStream, type AudioSample } from 'screencapturekit-audio-capture';
+import { Transform, TransformCallback, pipeline } from 'stream';
+import fs from 'fs';
 
 const capture = new AudioCapture();
 
@@ -2162,44 +2426,38 @@ setTimeout(() => audioStream.stop(), 10000);
 
 ### Audio Visualizer
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
+```typescript
+import { AudioCapture, type AudioSample } from 'screencapturekit-audio-capture';
+
 const capture = new AudioCapture();
 
-capture.on('audio', (sample) => {
-  const db = AudioCapture.rmsToDb(sample.rms);
-  const width = 50;
-  const normalized = Math.max(0, (db + 60) / 60);
-  const bars = '█'.repeat(Math.floor(normalized * width));
-
-  console.log(`[${bars}] ${db.toFixed(1)} dB`);
+capture.on('audio', (sample: AudioSample) => {
+  // Simple ASCII visualizer
+  const db: number = AudioCapture.rmsToDb(sample.rms);
+  const bars: number = Math.max(0, Math.round((db + 60) / 2)); // Map -60dB to 0dB
+  console.log('|' + '█'.repeat(bars) + ' '.repeat(30 - bars) + '| ' + db.toFixed(1) + ' dB');
 });
 
-capture.startCapture('Music');
+capture.startCapture('Spotify');
 ```
 
 ### Record to File
 
-```javascript
-const fs = require('fs');
-const AudioCapture = require('screencapturekit-audio-capture');
+```typescript
+import fs from 'fs';
+import { AudioCapture, type AudioSample } from 'screencapturekit-audio-capture';
 
 const capture = new AudioCapture();
-const chunks = [];
+const chunks: Buffer[] = [];
 
-capture.on('audio', (sample) => {
-  chunks.push(Buffer.from(sample.data));
+capture.on('audio', (sample: AudioSample) => {
+  chunks.push(sample.data);
 });
 
 capture.on('stop', () => {
-  const audioData = Buffer.concat(chunks);
+  const audioData: Buffer = Buffer.concat(chunks);
   fs.writeFileSync('recording.raw', audioData);
-
-  // Metadata for playback (Float32 PCM, 48kHz, Stereo)
-  const metadata = { format: 'f32le', sampleRate: 48000, channels: 2 };
-  fs.writeFileSync('recording.json', JSON.stringify(metadata));
-
-  console.log(`Saved ${(audioData.length / 1024 / 1024).toFixed(2)} MB`);
+  console.log(`Saved ${audioData.length} bytes to recording.raw`);
 });
 
 capture.startCapture('Spotify');
@@ -2210,92 +2468,77 @@ setTimeout(() => capture.stopCapture(), 30000); // 30 seconds
 
 Use the `writeWav()` helper to save audio as standard WAV files:
 
-```javascript
-const fs = require('fs');
-const AudioCapture = require('screencapturekit-audio-capture');
+```typescript
+import fs from 'fs';
+import { AudioCapture, type AudioSample } from 'screencapturekit-audio-capture';
 
 const capture = new AudioCapture();
-const audioChunks = [];
+const chunks: Buffer[] = [];
 
-capture.on('audio', (sample) => {
-  // Accumulate audio chunks
-  audioChunks.push({
-    data: sample.data,
-    sampleRate: sample.sampleRate,
-    channels: sample.channels,
-    format: sample.format
-  });
+capture.on('audio', (sample: AudioSample) => {
+  chunks.push(sample.data);
 });
 
 capture.on('stop', () => {
-  if (audioChunks.length === 0) return;
-
-  // Combine all chunks
-  const combinedBuffer = Buffer.concat(audioChunks.map(c => c.data));
+  const audioData: Buffer = Buffer.concat(chunks);
 
   // Create WAV file
-  const wavBuffer = AudioCapture.writeWav(combinedBuffer, {
-    sampleRate: audioChunks[0].sampleRate,
-    channels: audioChunks[0].channels,
-    format: audioChunks[0].format
+  const wav: Buffer = AudioCapture.writeWav(audioData, {
+    sampleRate: 48000,
+    channels: 2,
+    format: 'float32'  // Must match your capture format!
   });
 
-  // Save to file
-  fs.writeFileSync('recording.wav', wavBuffer);
-  console.log(`Saved ${(wavBuffer.length / 1024 / 1024).toFixed(2)} MB WAV file`);
+  fs.writeFileSync('recording.wav', wav);
+  console.log('Saved recording.wav');
 });
 
 capture.startCapture('Spotify');
-setTimeout(() => capture.stopCapture(), 30000); // 30 seconds
+setTimeout(() => capture.stopCapture(), 10000); // 10 seconds
 ```
 
 ### Volume Monitor with Alerts
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
+```typescript
+import { AudioCapture, type AudioSample } from 'screencapturekit-audio-capture';
+
 const capture = new AudioCapture();
 
-const LOUD_THRESHOLD = -10; // dB
-let loudCount = 0;
+const LOUD_THRESHOLD = -20; // dB
+const QUIET_THRESHOLD = -40; // dB
 
-capture.on('audio', (sample) => {
-  const db = AudioCapture.rmsToDb(sample.rms);
+capture.on('audio', (sample: AudioSample) => {
+  const db: number = AudioCapture.rmsToDb(sample.rms);
 
   if (db > LOUD_THRESHOLD) {
-    loudCount++;
-    if (loudCount > 5) {
-      console.warn('⚠️ Audio has been loud for a while!');
-      loudCount = 0;
-    }
+    console.log(`⚠️ LOUD: ${db.toFixed(1)} dB`);
+  } else if (db < QUIET_THRESHOLD) {
+    console.log(`🔇 Quiet: ${db.toFixed(1)} dB`);
   } else {
-    loudCount = 0;
+    console.log(`🟢 Normal: ${db.toFixed(1)} dB`);
   }
 });
 
-capture.startCapture('Music');
+capture.startCapture('Spotify');
 ```
 
 ### Smart Audio Detection (with Volume Threshold)
 
 Only process audio when sound is actually present, saving CPU and bandwidth:
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
+```typescript
+import { AudioCapture, type AudioSample } from 'screencapturekit-audio-capture';
+
 const capture = new AudioCapture();
 
-// Only emit audio events when RMS > 0.01 (filters out silence)
-capture.startCapture('Spotify', { minVolume: 0.01 });
-
-capture.on('audio', (sample) => {
-  // This only fires when audio is actively playing
-  const db = AudioCapture.rmsToDb(sample.rms);
-  console.log(`🔊 Audio detected: ${db.toFixed(1)} dB`);
-
-  // Process the audio...
+// Only emit events when there's actual audio
+capture.startCapture('Spotify', {
+  minVolume: 0.01  // Ignore audio below this RMS threshold
 });
 
-capture.on('start', ({ app }) => {
-  console.log(`Monitoring ${app.applicationName} (only when audio > threshold)`);
+capture.on('audio', (sample: AudioSample) => {
+  // This only fires when audio is present
+  console.log(`Active audio: ${AudioCapture.rmsToDb(sample.rms).toFixed(1)} dB`);
 });
 ```
 
@@ -2303,27 +2546,28 @@ capture.on('start', ({ app }) => {
 
 Many audio libraries expect Int16 format. Here's how to capture in that format:
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
+```typescript
+import { AudioCapture, type AudioSample } from 'screencapturekit-audio-capture';
+
 const capture = new AudioCapture();
 
-// Get audio in Int16 format instead of Float32
-capture.startCapture('Spotify', { format: 'int16' });
+// Request Int16 format instead of Float32
+capture.startCapture('Spotify', {
+  format: 'int16'
+});
 
-capture.on('audio', (sample) => {
-  // sample.data is now Int16 format
+capture.on('audio', (sample: AudioSample) => {
+  // sample.format will be 'int16'
+  // sample.data contains Int16 samples
+
+  // Convert to Int16Array for processing
   const int16 = new Int16Array(
     sample.data.buffer,
     sample.data.byteOffset,
     sample.data.byteLength / 2
   );
 
-  console.log(`Format: ${sample.format}`);  // 'int16'
-  console.log(`Samples: ${int16.length}`);
-  console.log(`Range: -32768 to 32767`);
-
-  // Use with audio libraries that expect Int16
-  // sendToAudioLibrary(sample.data);
+  console.log(`Got ${int16.length} Int16 samples`);
 });
 ```
 
@@ -2331,66 +2575,63 @@ capture.on('audio', (sample) => {
 
 Use helper methods to easily find audio applications:
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
+```typescript
+import { AudioCapture, type ApplicationInfo } from 'screencapturekit-audio-capture';
+
 const capture = new AudioCapture();
 
-// Get only apps likely to have audio (excludes system apps)
-const audioApps = capture.getAudioApps();
-console.log('Audio apps:', audioApps.map(a => a.applicationName));
-
-// Find specific app by name
-const spotify = capture.findByName('spotify');  // Case-insensitive
+// Find a specific app
+const spotify: ApplicationInfo | null = capture.findApplication('Spotify');
 if (spotify) {
-  console.log(`Found: ${spotify.applicationName}`);
-  console.log(`PID: ${spotify.processId}`);
-  console.log(`Bundle ID: ${spotify.bundleIdentifier}`);
-
-  capture.startCapture(spotify.processId);
-} else {
-  console.log('Spotify not running');
+  console.log(`Found ${spotify.applicationName} (PID: ${spotify.processId})`);
 }
 
-// List all apps with their properties
-const allApps = capture.getApplications();
-allApps.forEach(app => {
-  console.log(`${app.applicationName}`);
-  console.log(`  PID: ${app.processId}`);
-  console.log(`  Bundle: ${app.bundleIdentifier}`);
-});
+// Get only audio-producing apps (filters out system apps)
+const audioApps: ApplicationInfo[] = capture.getAudioApps();
+console.log('Audio apps:', audioApps.map((a) => a.applicationName));
+
+// Get all apps including system apps
+const allApps: ApplicationInfo[] = capture.getApplications();
+console.log('All apps:', allApps.map((a) => a.applicationName));
+
+// Find by bundle ID
+const safari: ApplicationInfo | null = capture.findApplication('com.apple.Safari');
+if (safari) {
+  capture.startCapture(safari.processId);
+}
 ```
 
 ### Processing Audio Samples
 
 Work with audio data using the Buffer conversion helper:
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
+```typescript
+import { AudioCapture, type AudioSample } from 'screencapturekit-audio-capture';
+
 const capture = new AudioCapture();
 
-capture.on('audio', (sample) => {
+capture.on('audio', (sample: AudioSample) => {
   // Convert Buffer to Float32Array
-  const float32 = AudioCapture.bufferToFloat32Array(sample.data);
+  const float32: Float32Array = AudioCapture.bufferToFloat32Array(sample.data);
 
-  // Calculate custom audio metrics
+  // Calculate average amplitude
   let sum = 0;
-  let maxVal = 0;
   for (let i = 0; i < float32.length; i++) {
-    const abs = Math.abs(float32[i]);
-    sum += abs;
-    if (abs > maxVal) maxVal = abs;
+    sum += Math.abs(float32[i]);
+  }
+  const avgAmplitude: number = sum / float32.length;
+
+  // Find min/max values
+  let min = 0, max = 0;
+  for (let i = 0; i < float32.length; i++) {
+    if (float32[i] < min) min = float32[i];
+    if (float32[i] > max) max = float32[i];
   }
 
-  const avgAmplitude = sum / float32.length;
-
-  console.log(`Samples: ${float32.length}`);
-  console.log(`Average amplitude: ${avgAmplitude.toFixed(4)}`);
-  console.log(`Peak: ${maxVal.toFixed(4)}`);
-  console.log(`RMS: ${sample.rms.toFixed(4)}`);
-  console.log(`Duration: ${sample.durationMs.toFixed(1)}ms`);
+  console.log(`Samples: ${float32.length}, Avg: ${avgAmplitude.toFixed(4)}, Range: [${min.toFixed(4)}, ${max.toFixed(4)}]`);
 });
 
-capture.startCapture('Music');
+capture.startCapture('Spotify');
 ```
 
 ## System Permissions
@@ -2407,7 +2648,7 @@ This package requires Screen Recording permission to capture audio.
 
 ### Checking Permissions
 
-```javascript
+```typescript
 const apps = capture.getApplications();
 if (apps.length === 0) {
   console.error('No apps available. Please grant Screen Recording permission.');
@@ -2532,25 +2773,23 @@ NODE_DEBUG=screencapturekit node your-app.js
 
 ### Check Native Module Load
 
-```javascript
+```typescript
 try {
-  const AudioCapture = require('screencapturekit-audio-capture');
+  const { AudioCapture } = require('screencapturekit-audio-capture');
   console.log('✓ Native addon loaded successfully');
-
-  const capture = new AudioCapture();
-  console.log('✓ AudioCapture instance created');
 } catch (err) {
-  console.error('❌ Failed to load native addon:', err.message);
+  console.error('✗ Failed to load native addon:', (err as Error).message);
   console.error('Try: npm rebuild screencapturekit-audio-capture');
 }
 ```
 
 ### Verify Permissions Programmatically
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
+```typescript
+import { AudioCapture, type ApplicationInfo } from 'screencapturekit-audio-capture';
+
 const capture = new AudioCapture();
-const apps = capture.getApplications();
+const apps: ApplicationInfo[] = capture.getApplications();
 
 if (apps.length === 0) {
   console.error('❌ No apps available - likely a permission issue');
@@ -2558,29 +2797,30 @@ if (apps.length === 0) {
   console.error('Make sure your terminal app is listed and enabled');
 } else {
   console.log(`✓ Permissions OK - found ${apps.length} apps`);
-  console.log('Available apps:', apps.map(a => a.applicationName).join(', '));
+  console.log('Available apps:', apps.map((a) => a.applicationName).join(', '));
 }
 ```
 
 ### Test Basic Capture
 
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
+```typescript
+import { AudioCapture, type ApplicationInfo, type AudioSample } from 'screencapturekit-audio-capture';
+
 const capture = new AudioCapture();
 
 // Find any available app
-const apps = capture.getAudioApps();
+const apps: ApplicationInfo[] = capture.getAudioApps();
 if (apps.length === 0) {
   console.error('No audio apps running');
   process.exit(1);
 }
 
-const app = apps[0];
+const app: ApplicationInfo = apps[0];
 console.log(`Testing with: ${app.applicationName}`);
 
 let receivedSamples = 0;
 
-capture.on('audio', (sample) => {
+capture.on('audio', (sample: AudioSample) => {
   receivedSamples++;
   if (receivedSamples === 1) {
     console.log('✓ First sample received!');
@@ -2591,12 +2831,10 @@ capture.on('audio', (sample) => {
   }
 });
 
-capture.on('error', (err) => {
+capture.on('error', (err: Error) => {
   console.error('❌ Capture error:', err.message);
-  console.error('Code:', err.code);
-  if (err.details) {
-    console.error('Details:', err.details);
-  }
+  if ('code' in err) console.error('Code:', (err as any).code);
+  if ('details' in err) console.error('Details:', (err as any).details);
 });
 
 capture.startCapture(app.applicationName);
@@ -2632,6 +2870,40 @@ sw_vers
 
 ## Migrating from Older Versions
 
+### TypeScript Rewrite (v1.2.x)
+
+The SDK has been rewritten in **TypeScript** for better type safety and developer experience.
+
+**What Changed:**
+- SDK source moved from `sdk.js` to TypeScript in `src/`
+- Compiled output in `dist/` directory
+- Type definitions generated from source (not hand-written)
+- Tests rewritten in TypeScript
+
+**Type Name Changes:**
+
+| Old Name | New Name |
+|----------|----------|
+| `EnhancedAudioSample` | `AudioSample` |
+| `AppInfo` | `ApplicationInfo` |
+| `StreamOptions` | `AudioStreamOptions` |
+| `ErrorCodes` (object) | `ErrorCode` (enum) |
+
+**Migration Steps:**
+1. Update imports to use new type names
+2. Use `ErrorCode` enum instead of `ErrorCodes` object for type safety
+3. `ErrorCodes` object still works for backward compatibility
+
+```typescript
+// Old
+import { ErrorCodes, AppInfo } from 'screencapturekit-audio-capture';
+if (err.code === ErrorCodes.APP_NOT_FOUND) { ... }
+
+// New
+import { ErrorCode, type ApplicationInfo } from 'screencapturekit-audio-capture';
+if (err.code === ErrorCode.APP_NOT_FOUND) { ... }
+```
+
 ### From v1.1.x to v1.2.x
 
 **New capabilities:**
@@ -2657,9 +2929,9 @@ sw_vers
 **Breaking Changes:** None - fully backward compatible
 
 **Recommended Updates:**
-```javascript
+```typescript
 // Old way
-capture.on('audio', (sample) => {
+capture.on('audio', (sample: AudioSample) => {
   const float32 = new Float32Array(
     sample.data.buffer,
     sample.data.byteOffset,
@@ -2668,14 +2940,14 @@ capture.on('audio', (sample) => {
 });
 
 // New way (cleaner)
-capture.on('audio', (sample) => {
+capture.on('audio', (sample: AudioSample) => {
   const float32 = AudioCapture.bufferToFloat32Array(sample.data);
 });
 ```
 
-```javascript
+```typescript
 // Old error handling
-capture.on('error', (err) => {
+capture.on('error', (err: Error) => {
   console.error('Error:', err.message);
 });
 
@@ -2721,7 +2993,16 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 git clone https://github.com/mrlionware/screencapturekit-audio-capture.git
 cd screencapturekit-audio-capture
 npm install
-npm run build
+npm run build          # Build native addon + TypeScript
+```
+
+**Build Commands:**
+
+```bash
+npm run build          # Build everything (native + TypeScript)
+npm run build:native   # Build native addon only
+npm run build:ts       # Compile TypeScript only
+npm run clean          # Clean build artifacts
 ```
 
 **Running Tests:**
@@ -2735,15 +3016,31 @@ npm run test:unit
 npm run test:integration
 npm run test:edge-cases
 npm run test:examples
+
+# Type checking
+npm run typecheck          # Check SDK source
+npm run typecheck:tests    # Check test files
 ```
 
 **Code Structure:**
-- `src/addon.mm` - N-API bindings
-- `src/screencapturekit_wrapper.mm` - Objective-C++ wrapper
-- `src/screencapturekit_wrapper.h` - C++ header
-- `sdk.js` - High-level JavaScript API
-- `index.d.ts` - TypeScript definitions
-- `examples/` - Example scripts
+
+```
+src/
+├── index.ts              # Main entry point and exports
+├── audio-capture.ts      # AudioCapture class (high-level API)
+├── audio-stream.ts       # AudioStream class (Readable stream)
+├── stt-converter.ts      # STTConverter class (Transform stream)
+├── errors.ts             # AudioCaptureError and ErrorCode enum
+├── types.ts              # All TypeScript type definitions
+├── addon.mm              # N-API bindings (native)
+├── screencapturekit_wrapper.mm  # Objective-C++ wrapper
+└── screencapturekit_wrapper.h   # C++ header
+
+dist/                     # Compiled JavaScript output
+tests/                    # TypeScript test files
+examples/                 # Example scripts
+sdk.js                    # Legacy JavaScript wrapper
+```
 
 ## Changelog
 
