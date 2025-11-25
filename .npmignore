@@ -7,6 +7,9 @@
 *~
 docs/
 .claude
+README.md
+CHANGELOG.md
+examples/
 
 # Build artifacts (will be rebuilt on user's machine)
 build/
