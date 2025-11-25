@@ -5,38 +5,46 @@
  * This makes tests more maintainable and reduces boilerplate.
  */
 
-const { loadSDKWithMock } = require('./test-utils');
-const { createNativeMock } = require('../fixtures/mock-native');
+import type { EventEmitter } from 'node:events';
+import { loadSDKWithMock, type SDKExports } from './test-utils';
+import { createNativeMock, type CreateNativeMockOptions, type MockScreenCaptureKit } from '../fixtures/mock-native';
+import type { AudioCapture } from '../../dist/audio-capture';
+import type { AppIdentifier, AudioStreamOptions } from '../../dist/types';
 
 /**
  * Create a test context with SDK and mocks
- *
- * @param {Object} nativeMock - Optional native mock to use
- * @param {Object} options - Additional options
- * @returns {Object} Test context with SDK classes
  *
  * @example
  * const { AudioCapture, ErrorCodes } = createTestContext();
  * const capture = new AudioCapture();
  */
-function createTestContext(nativeMock = null, options = {}) {
+export function createTestContext(
+  nativeMock: { ScreenCaptureKit: typeof MockScreenCaptureKit } | null = null,
+  options: CreateNativeMockOptions = {}
+): SDKExports {
   const mock = nativeMock || createNativeMock(options);
   return loadSDKWithMock({ nativeMock: mock });
 }
 
 /**
+ * Context for capture testing
+ */
+export interface CaptureContext {
+  capture: AudioCapture;
+  native: MockScreenCaptureKit | null;
+  AudioCapture: typeof AudioCapture;
+}
+
+/**
  * Create a test context for capture testing
- *
- * @param {Object} options - Capture options
- * @returns {Object} Context with capture and native instance
  *
  * @example
  * const { capture, native } = createCaptureContext();
  * capture.startCapture(100);
  * native.simulateAudio();
  */
-function createCaptureContext(options = {}) {
-  let nativeInstance = null;
+export function createCaptureContext(options: CreateNativeMockOptions = {}): CaptureContext {
+  let nativeInstance: MockScreenCaptureKit | null = null;
 
   const nativeMock = {
     ScreenCaptureKit: class extends (createNativeMock(options).ScreenCaptureKit) {
@@ -58,21 +66,28 @@ function createCaptureContext(options = {}) {
 }
 
 /**
- * Create a test context for stream testing
- *
- * @param {Object} options - Stream options
- * @returns {Object} Context with stream helpers
+ * Context for stream testing
  */
-function createStreamContext(options = {}) {
+export interface StreamContext {
+  capture: AudioCapture;
+  native: MockScreenCaptureKit | null;
+  createStream: (identifier: AppIdentifier, streamOptions?: AudioStreamOptions) => any;
+  simulateAudio: (data?: any) => void;
+}
+
+/**
+ * Create a test context for stream testing
+ */
+export function createStreamContext(options: CreateNativeMockOptions = {}): StreamContext {
   const { capture, native } = createCaptureContext(options);
 
   return {
     capture,
     native,
-    createStream: (identifier, streamOptions) => {
+    createStream: (identifier: AppIdentifier, streamOptions?: AudioStreamOptions) => {
       return capture.createAudioStream(identifier, streamOptions);
     },
-    simulateAudio: (data) => native.simulateAudio(data)
+    simulateAudio: (data?: any) => native?.simulateAudio(data)
   };
 }
 
@@ -80,25 +95,20 @@ function createStreamContext(options = {}) {
  * Wait for event loop to clear
  * Useful for async operations in tests
  */
-function waitForEventLoop() {
+export function waitForEventLoop(): Promise<void> {
   return new Promise(resolve => setImmediate(resolve));
 }
 
 /**
  * Wait for a specific event with timeout
- *
- * @param {EventEmitter} emitter - Event emitter
- * @param {string} event - Event name
- * @param {number} timeout - Timeout in ms (default: 1000)
- * @returns {Promise} Resolves with event data
  */
-function waitForEvent(emitter, event, timeout = 1000) {
+export function waitForEvent(emitter: EventEmitter, event: string, timeout: number = 1000): Promise<any> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error(`Timeout waiting for event '${event}'`));
     }, timeout);
 
-    emitter.once(event, (data) => {
+    emitter.once(event, (data: any) => {
       clearTimeout(timer);
       resolve(data);
     });
@@ -107,25 +117,12 @@ function waitForEvent(emitter, event, timeout = 1000) {
 
 /**
  * Run code with timeout protection
- *
- * @param {Function} fn - Async function to run
- * @param {number} timeout - Timeout in ms
- * @returns {Promise} Result of function
  */
-function withTimeout(fn, timeout = 5000) {
+export function withTimeout<T>(fn: () => Promise<T>, timeout: number = 5000): Promise<T> {
   return Promise.race([
     fn(),
-    new Promise((_, reject) =>
+    new Promise<T>((_, reject) =>
       setTimeout(() => reject(new Error('Test timeout')), timeout)
     )
   ]);
 }
-
-module.exports = {
-  createTestContext,
-  createCaptureContext,
-  createStreamContext,
-  waitForEventLoop,
-  waitForEvent,
-  withTimeout
-};

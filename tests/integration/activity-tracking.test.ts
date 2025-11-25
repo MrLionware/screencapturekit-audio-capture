@@ -7,34 +7,36 @@
  * - Sort apps by recent audio activity
  */
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { loadSDKWithMock } = require('../helpers/test-utils');
+import test, { type TestContext } from 'node:test';
+import assert from 'node:assert/strict';
+import { loadSDKWithMock } from '../helpers/test-utils';
+import type { AudioSample, ApplicationInfo, ActivityInfo } from '../../dist/types';
+import type { NativeAudioSample } from '../fixtures/mock-native';
 
-const MOCK_APPS = [
+const MOCK_APPS: ApplicationInfo[] = [
   { processId: 100, bundleIdentifier: 'com.example.app', applicationName: 'Example App' },
   { processId: 200, bundleIdentifier: 'com.music.player', applicationName: 'Music Player' },
   { processId: 300, bundleIdentifier: 'com.apple.finder', applicationName: 'Finder' },
 ];
 
+type ActivityCacheEntry = { lastSeen: number; avgRMS: number; sampleCount: number };
+
 test('Activity Tracking', async (t) => {
   // Shared callback storage for tests
-  let sharedCallback = null;
+  let sharedCallback: ((sample: NativeAudioSample) => void) | null = null;
 
   const mockNative = {
     ScreenCaptureKit: class {
-      constructor() {
-        this._callback = null;
-      }
-      getAvailableApps() {
+      private _callback: ((sample: NativeAudioSample) => void) | null = null;
+      getAvailableApps(): ApplicationInfo[] {
         return MOCK_APPS;
       }
-      startCapture(pid, config, callback) {
+      startCapture(_pid: number, _config: any, callback: (sample: NativeAudioSample) => void): boolean {
         this._callback = callback;
         sharedCallback = callback; // Store in outer scope for test access
         return true;
       }
-      stopCapture() {
+      stopCapture(): void {
         this._callback = null;
         sharedCallback = null;
       }
@@ -44,21 +46,30 @@ test('Activity Tracking', async (t) => {
   const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
 
   await t.test('should enable tracking', () => {
-    const capture = new AudioCapture();
+    const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & {
+      _activityTrackingEnabled: boolean;
+      _activityDecayMs: number;
+    };
     capture.enableActivityTracking();
     assert.equal(capture._activityTrackingEnabled, true);
     assert.equal(capture._activityDecayMs, 30000); // Default decay
   });
 
   await t.test('should enable tracking with custom decay', () => {
-    const capture = new AudioCapture();
+    const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & {
+      _activityTrackingEnabled: boolean;
+      _activityDecayMs: number;
+    };
     capture.enableActivityTracking({ decayMs: 60000 });
     assert.equal(capture._activityTrackingEnabled, true);
     assert.equal(capture._activityDecayMs, 60000);
   });
 
   await t.test('should disable and clear cache', () => {
-    const capture = new AudioCapture();
+    const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & {
+      _activityTrackingEnabled: boolean;
+      _audioActivityCache: Map<number, ActivityCacheEntry>;
+    };
     capture.enableActivityTracking();
     // Add some fake data to cache
     capture._audioActivityCache.set(100, {
@@ -76,20 +87,20 @@ test('Activity Tracking', async (t) => {
     const capture = new AudioCapture();
     capture.enableActivityTracking();
 
-    const info = capture.getActivityInfo();
+    const info = capture.getActivityInfo() as ActivityInfo;
     assert.equal(info.enabled, true);
     assert.equal(info.trackedApps, 0);
     assert.ok(Array.isArray(info.recentApps));
   });
 
-  await t.test('should integrate with audio events', (t, done) => {
+  await t.test('should integrate with audio events', (t: TestContext, done: () => void) => {
     const capture = new AudioCapture();
     capture.enableActivityTracking();
 
     // Test that activity tracking doesn't break audio emission
     capture.startCapture('Music Player');
 
-    capture.once('audio', (sample) => {
+    capture.once('audio', (sample: AudioSample) => {
       // Verify audio event works with activity tracking enabled
       assert.ok(sample.data instanceof Buffer);
       assert.ok(sample.rms >= 0);
@@ -109,7 +120,7 @@ test('Activity Tracking', async (t) => {
     floatData.fill(0.5);
     const buffer = Buffer.from(floatData.buffer);
 
-    sharedCallback({
+    sharedCallback?.({
       data: buffer,
       sampleRate: 48000,
       channelCount: 2,
@@ -117,8 +128,10 @@ test('Activity Tracking', async (t) => {
     });
   });
 
-  await t.test('should sort by recent activity', (t, done) => {
-    const capture = new AudioCapture();
+  await t.test('should sort by recent activity', (t: TestContext, done: () => void) => {
+    const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & {
+      _audioActivityCache: Map<number, ActivityCacheEntry>;
+    };
     capture.enableActivityTracking();
 
     // Manually add activity for different apps
@@ -143,8 +156,10 @@ test('Activity Tracking', async (t) => {
     done();
   });
 
-  await t.test('should handle apps without activity', (t, done) => {
-    const capture = new AudioCapture();
+  await t.test('should handle apps without activity', (t: TestContext, done: () => void) => {
+    const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & {
+      _audioActivityCache: Map<number, ActivityCacheEntry>;
+    };
     capture.enableActivityTracking();
 
     // Add activity for only one app
@@ -163,12 +178,14 @@ test('Activity Tracking', async (t) => {
     done();
   });
 
-  await t.test('should not affect performance when disabled', (t, done) => {
-    const capture = new AudioCapture();
+  await t.test('should not affect performance when disabled', (t: TestContext, done: () => void) => {
+    const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & {
+      _audioActivityCache: Map<number, ActivityCacheEntry>;
+    };
     capture.disableActivityTracking();
     capture.startCapture('Music Player');
 
-    capture.once('audio', (sample) => {
+    capture.once('audio', () => {
       // Cache should remain empty when tracking is disabled
       assert.equal(capture._audioActivityCache.size, 0);
       capture.stopCapture();
@@ -179,7 +196,7 @@ test('Activity Tracking', async (t) => {
     floatData.fill(0.5);
     const buffer = Buffer.from(floatData.buffer);
 
-    sharedCallback({
+    sharedCallback?.({
       data: buffer,
       sampleRate: 48000,
       channelCount: 2,

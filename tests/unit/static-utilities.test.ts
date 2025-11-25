@@ -8,11 +8,12 @@
  * - Utility methods (selectApp, getStatus, etc.)
  */
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { createNativeMock } = require('../fixtures/mock-native');
-const { loadSDKWithMock } = require('../helpers/test-utils');
-const { MOCK_APPS } = require('../fixtures/mock-data');
+import test, { type TestContext } from 'node:test';
+import assert from 'node:assert/strict';
+import { loadSDKWithMock } from '../helpers/test-utils';
+import { MOCK_APPS } from '../fixtures/mock-data';
+import type { ApplicationInfo, CaptureStatus } from '../../dist/types';
+import type { NativeCaptureConfig, NativeAudioSample } from '../fixtures/mock-native';
 
 test('Static Utilities', async (t) => {
   await t.test('bufferToFloat32Array', async (t) => {
@@ -68,17 +69,17 @@ test('Static Utilities', async (t) => {
 test('AudioCapture Utilities', async (t) => {
   const mockNative = {
     ScreenCaptureKit: class {
-      getAvailableApps() {
+      getAvailableApps(): ApplicationInfo[] {
         return MOCK_APPS;
       }
-      startCapture() {
+      startCapture(): boolean {
         return true;
       }
-      stopCapture() {}
-      getAvailableWindows() {
+      stopCapture(): void { }
+      getAvailableWindows(): any[] {
         return [];
       }
-      getAvailableDisplays() {
+      getAvailableDisplays(): any[] {
         return [];
       }
     }
@@ -91,24 +92,24 @@ test('AudioCapture Utilities', async (t) => {
 
     await t.test('should find app by exact name', () => {
       const app = capture.selectApp('Music Player');
-      assert.equal(app.processId, 200);
+      assert.equal(app!.processId, 200);
     });
 
     await t.test('should find app by PID', () => {
       const app = capture.selectApp(100);
-      assert.equal(app.applicationName, 'Example App');
+      assert.equal(app!.applicationName, 'Example App');
     });
 
     await t.test('should try multiple identifiers', () => {
       // First one doesn't exist, second one does
       const app = capture.selectApp(['NonExistent', 'Music Player']);
-      assert.equal(app.processId, 200);
+      assert.equal(app!.processId, 200);
     });
 
     await t.test('should fallback to first audio app when no args', () => {
       const app = capture.selectApp();
       // Should be Example App (first one)
-      assert.equal(app.processId, 100);
+      assert.equal(app!.processId, 100);
     });
 
     await t.test('should filter system apps by default', () => {
@@ -123,7 +124,7 @@ test('AudioCapture Utilities', async (t) => {
       const app = capture.selectApp('Finder', {
         audioOnly: false
       });
-      assert.equal(app.applicationName, 'Finder');
+      assert.equal(app!.applicationName, 'Finder');
     });
 
     await t.test('should throw when throwOnNotFound is true', () => {
@@ -131,7 +132,7 @@ test('AudioCapture Utilities', async (t) => {
         capture.selectApp('NonExistent', {
           throwOnNotFound: true
         });
-      }, (err) => {
+      }, (err: any) => {
         assert.equal(err.code, ErrorCodes.APP_NOT_FOUND);
         return true;
       });
@@ -141,12 +142,12 @@ test('AudioCapture Utilities', async (t) => {
   await t.test('Error Handling', async (t) => {
     await t.test('should throw helpful error when app missing', () => {
       const capture = new AudioCapture();
-      const errors = [];
+      const errors: any[] = [];
       capture.on('error', (err) => errors.push(err));
 
       assert.throws(() => {
         capture.startCapture('Nonexistent App');
-      }, (err) => {
+      }, (err: any) => {
         assert.equal(err.code, ErrorCodes.APP_NOT_FOUND);
         assert.ok(Array.isArray(err.details.availableApps));
         assert.ok(err.details.availableApps.includes('Example App'));
@@ -173,10 +174,10 @@ test('AudioCapture Utilities', async (t) => {
         channels: 1
       });
 
-      const status = capture.getStatus();
+      const status = capture.getStatus() as CaptureStatus;
       assert.ok(status);
       assert.equal(status.capturing, true);
-      assert.equal(status.app.applicationName, 'Example App');
+      assert.equal(status.app!.applicationName, 'Example App');
       assert.equal(status.config.format, 'int16');
       assert.equal(status.config.minVolume, 0);
 
@@ -186,14 +187,14 @@ test('AudioCapture Utilities', async (t) => {
   });
 
   await t.test('Native Config Propagation', async (t) => {
-    await t.test('should pass config to native layer', (t, done) => {
-      let nativeConfigReceived = null;
+    await t.test('should pass config to native layer', (t: TestContext, done: () => void) => {
+      let nativeConfigReceived: NativeCaptureConfig | null = null;
       const mockNativeSpy = {
         ScreenCaptureKit: class {
-          getAvailableApps() {
+          getAvailableApps(): ApplicationInfo[] {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          startCapture(_pid: number, config: NativeCaptureConfig, _callback: (sample: NativeAudioSample) => void): boolean {
             nativeConfigReceived = config;
             return true;
           }
@@ -211,10 +212,10 @@ test('AudioCapture Utilities', async (t) => {
       });
 
       assert.ok(nativeConfigReceived);
-      assert.equal(nativeConfigReceived.sampleRate, 44100);
-      assert.equal(nativeConfigReceived.channels, 1);
-      assert.equal(nativeConfigReceived.bufferSize, 2048);
-      assert.equal(nativeConfigReceived.excludeCursor, false);
+      assert.equal(nativeConfigReceived!.sampleRate, 44100);
+      assert.equal(nativeConfigReceived!.channels, 1);
+      assert.equal(nativeConfigReceived!.bufferSize, 2048);
+      assert.equal(nativeConfigReceived!.excludeCursor, false);
       done();
     });
   });

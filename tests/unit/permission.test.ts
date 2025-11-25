@@ -6,10 +6,11 @@
  * - verifyPermissions() when granted (apps returned)
  */
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { loadSDKWithMock } = require('../helpers/test-utils');
-const { MOCK_APPS } = require('../fixtures/mock-data');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { loadSDKWithMock } from '../helpers/test-utils';
+import { MOCK_APPS } from '../fixtures/mock-data';
+import type { ApplicationInfo } from '../../dist/types';
 
 test('Permission Verification', async (t) => {
   await t.test('Permission Denied', async (t) => {
@@ -17,7 +18,7 @@ test('Permission Verification', async (t) => {
       // Mock scenario where no apps are returned (permission denied)
       const mockNativeDenied = {
         ScreenCaptureKit: class {
-          getAvailableApps() {
+          getAvailableApps(): ApplicationInfo[] {
             return [];
           }
         }
@@ -36,7 +37,7 @@ test('Permission Verification', async (t) => {
       // Mock scenario where apps are found (permission granted)
       const mockNativeGranted = {
         ScreenCaptureKit: class {
-          getAvailableApps() {
+          getAvailableApps(): ApplicationInfo[] {
             return MOCK_APPS;
           }
         }
@@ -51,7 +52,7 @@ test('Permission Verification', async (t) => {
     await t.test('should return apps list for reuse to avoid redundant calls', () => {
       const mockNativeGranted = {
         ScreenCaptureKit: class {
-          getAvailableApps() {
+          getAvailableApps(): ApplicationInfo[] {
             return MOCK_APPS;
           }
         }
@@ -61,9 +62,9 @@ test('Permission Verification', async (t) => {
       const status = AudioCapture.verifyPermissions();
       assert.equal(status.granted, true);
       assert.ok(Array.isArray(status.apps), 'Should return apps array');
-      assert.equal(status.apps.length, 3);
-      assert.equal(status.apps[0].processId, 100);
-      assert.equal(status.apps[0].applicationName, 'Example App');
+      assert.equal(status.apps!.length, 3);
+      assert.equal(status.apps![0].processId, 100);
+      assert.equal(status.apps![0].applicationName, 'Example App');
     });
   });
 
@@ -71,7 +72,7 @@ test('Permission Verification', async (t) => {
     await t.test('should verify permissions successfully', () => {
       const mockNative = {
         ScreenCaptureKit: class {
-          getAvailableApps() {
+          getAvailableApps(): ApplicationInfo[] {
             return MOCK_APPS;
           }
         }
@@ -87,7 +88,7 @@ test('Permission Verification', async (t) => {
     await t.test('should return false when no apps found', () => {
       const mockNativeEmpty = {
         ScreenCaptureKit: class {
-          getAvailableApps() {
+          getAvailableApps(): ApplicationInfo[] {
             return [];
           }
         }

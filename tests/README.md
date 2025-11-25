@@ -9,15 +9,16 @@ npm test
 # Run specific category
 npm run test:unit
 npm run test:integration
-npm run test:examples
 npm run test:edge-cases
 
-# Watch mode (re-run on changes)
-npm run test:watch
+# Type-check tests without running
+npm run test:typecheck
 
 # Run single file
-npm test tests/unit/audio-processing.test.js
+npm test tests/unit/audio-processing.test.ts
 ```
+
+> **Note:** Tests are written in TypeScript and run via `tsx` (TypeScript executor).
 
 ## Why This Framework?
 
@@ -28,7 +29,7 @@ npm test tests/unit/audio-processing.test.js
 tests/
   all.test.js (3050 lines) ← Everything in one file
   helpers/
-    test-utils.js
+    test-utils.ts
 ```
 
 **Issues:**
@@ -40,17 +41,16 @@ tests/
 - ❌ Difficult to run subset of tests
 - ❌ Test duplication and copy-paste code
 
-### After: Modular Framework
+### After: Modular TypeScript Framework
 
 **The Solution:**
 ```
 tests/
-  unit/          (6 files, avg 150 lines each)
-  integration/   (4 files, avg 200 lines each)
-  examples/      (5 files, avg 100 lines each)
-  edge-cases/    (4 files, avg 150 lines each)
-  fixtures/      (shared data)
-  helpers/       (utilities)
+  unit/          (7 files, TypeScript)
+  integration/   (4 files, TypeScript)
+  edge-cases/    (1 file, TypeScript)
+  fixtures/      (shared mock data, TypeScript)
+  helpers/       (utilities, TypeScript)
 ```
 
 **Benefits:**
@@ -69,41 +69,34 @@ tests/
 ```
 tests/
 ├── unit/                          # Unit tests (single component)
-│   ├── audio-processing.test.js       # RMS, peak, format conversion
-│   ├── app-selection.test.js          # App discovery & selection
-│   ├── capture-control.test.js        # Start/stop logic
-│   ├── stream-api.test.js             # AudioStream
-│   └── stt-converter.test.js          # STT conversion
+│   ├── audio-processing.test.ts       # RMS, peak, format conversion
+│   ├── app-selection.test.ts          # App discovery & selection
+│   ├── capture-control.test.ts        # Start/stop logic
+│   ├── permission.test.ts             # Permission verification
+│   ├── static-utilities.test.ts       # Static helper methods
+│   ├── stream-api.test.ts             # AudioStream
+│   └── stt-converter.test.ts          # STT conversion
 │
 ├── integration/                   # Integration tests (multi-component)
-│   ├── capture-flow.test.js           # End-to-end workflows
-│   ├── window-display.test.js         # Window/display capture
-│   ├── activity-tracking.test.js      # Activity tracking
-│   └── error-handling.test.js         # Error propagation
-│
-├── examples/                      # Example validation
-│   ├── basic-usage.test.js
-│   ├── stream-api.test.js
-│   ├── advanced-config.test.js
-│   ├── finding-apps.test.js
-│   └── stt-integration.test.js
+│   ├── activity-tracking.test.ts      # Activity tracking
+│   ├── capability-guards.test.ts      # Capability checks
+│   ├── examples.test.ts               # Example validation
+│   └── window-display.test.ts         # Window/display capture
 │
 ├── edge-cases/                    # Boundary & error cases
-│   ├── validation.test.js             # Input validation
-│   ├── extreme-values.test.js         # NaN, Infinity, extremes
-│   ├── resource-management.test.js    # Memory leaks, cleanup
-│   └── concurrent-operations.test.js  # Race conditions
+│   └── validation.test.ts             # Input validation
 │
 ├── fixtures/                      # Shared test data
-│   ├── mock-data.js                   # Reusable mocks
-│   └── mock-native.js                 # Native layer mocks
+│   ├── mock-data.ts                   # Reusable mocks
+│   └── mock-native.ts                 # Native layer mocks
 │
 ├── helpers/                       # Test utilities
-│   ├── test-utils.js                  # Original utilities
-│   ├── test-context.js                # Context factories
-│   ├── factories.js                   # Data factories
-│   └── assertions.js                  # Custom assertions
+│   ├── test-utils.ts                  # VM-based SDK loader
+│   ├── test-context.ts                # Context factories
+│   ├── factories.ts                   # Data factories
+│   └── assertions.ts                  # Custom assertions
 │
+├── tsconfig.json                  # TypeScript config for tests
 └── .test-template.js              # Template for new tests
 ```
 
@@ -140,11 +133,11 @@ tests/
 **Scenario:** Adding `exportToMP3()` method
 
 1. **Write unit test first** (TDD):
-```javascript
-// tests/unit/mp3-export.test.js
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { createTestContext } = require('../helpers/test-context');
+```typescript
+// tests/unit/mp3-export.test.ts
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createTestContext } from '../helpers/test-context';
 
 test('MP3 Export', async (t) => {
   await t.test('should export audio to MP3 format', () => {
@@ -170,14 +163,14 @@ test('MP3 Export', async (t) => {
 
 2. **Run test** (it fails - expected):
 ```bash
-npm test tests/unit/mp3-export.test.js
+npm test tests/unit/mp3-export.test.ts
 ```
 
-3. **Implement the feature** in `sdk.js`
+3. **Implement the feature** in `src/audio-capture.ts`
 
 4. **Run test again** - should pass:
 ```bash
-npm test tests/unit/mp3-export.test.js
+npm test tests/unit/mp3-export.test.ts
 ```
 
 5. **Add integration test** if needed
@@ -191,8 +184,8 @@ npm test
 **Scenario:** Bug where negative audio values crash the app
 
 1. **Add failing test** that reproduces the bug:
-```javascript
-// tests/edge-cases/extreme-values.test.js
+```typescript
+// tests/edge-cases/extreme-values.test.ts
 await t.test('should handle negative audio values', (t, done) => {
   const { capture, native } = createCaptureContext();
   capture.startCapture(100, { minVolume: 0 });
@@ -209,7 +202,7 @@ await t.test('should handle negative audio values', (t, done) => {
 ```
 
 2. **Run test** - it fails (crashes)
-3. **Fix the bug** in `sdk.js`
+3. **Fix the bug** in `src/audio-capture.ts`
 4. **Run test again** - it passes
 5. **Run all tests** to ensure no regression
 6. **Keep the test** - it prevents the bug from returning
@@ -238,11 +231,11 @@ npm test
 
 ### Creating Test Contexts
 
-```javascript
-const { createTestContext, createCaptureContext } = require('../helpers/test-context');
+```typescript
+import { createTestContext, createCaptureContext } from '../helpers/test-context';
 
 // Simple context
-const { AudioCapture, ErrorCodes } = createTestContext();
+const { AudioCapture, ErrorCode } = createTestContext();
 
 // Capture context with native mock access
 const { capture, native } = createCaptureContext();
@@ -255,21 +248,22 @@ await waitForEvent(capture, 'audio');
 
 ### Using Factories
 
-```javascript
-const { createAudioSample, createMockApp } = require('../helpers/factories');
+```typescript
+import { createAudioSample, createMockApp } from '../helpers/factories';
+import type { AudioSample, ApplicationInfo } from '../../dist';
 
 // Create audio sample with defaults
-const sample = createAudioSample();
+const sample: AudioSample = createAudioSample();
 
 // Create custom sample
-const customSample = createAudioSample({
+const customSample: AudioSample = createAudioSample({
   format: 'int16',
   channels: 1,
   rms: 0.8
 });
 
 // Create mock app
-const app = createMockApp({
+const app: ApplicationInfo = createMockApp({
   processId: 999,
   applicationName: 'Custom App'
 });
@@ -277,8 +271,8 @@ const app = createMockApp({
 
 ### Custom Assertions
 
-```javascript
-const { assertAudioSample, assertCaptureState } = require('../helpers/assertions');
+```typescript
+import { assertAudioSample, assertCaptureState } from '../helpers/assertions';
 
 // Assert audio sample properties
 assertAudioSample(sample, {
@@ -298,9 +292,9 @@ assertCaptureState(capture, {
 
 ### Using Fixtures
 
-```javascript
-const { MOCK_APPS, MOCK_WINDOWS } = require('../fixtures/mock-data');
-const { createNativeMock } = require('../fixtures/mock-native');
+```typescript
+import { MOCK_APPS, MOCK_WINDOWS } from '../fixtures/mock-data';
+import { createNativeMock } from '../fixtures/mock-native';
 
 // Use standard mocks
 const nativeMock = createNativeMock({
@@ -337,20 +331,22 @@ const customMock = createNativeMock({
 ```
 tests/
   unit/
-    feature-name.test.js          # Kebab-case
-    audio-processing.test.js      # Clear, descriptive
-    app-selection.test.js         # One feature per file
+    feature-name.test.ts          # Kebab-case
+    audio-processing.test.ts      # Clear, descriptive
+    app-selection.test.ts         # One feature per file
 
   integration/
-    feature-workflow.test.js      # End-to-end flows
+    feature-workflow.test.ts      # End-to-end flows
 
   edge-cases/
-    feature-validation.test.js    # Boundary tests
+    feature-validation.test.ts    # Boundary tests
 ```
 
 ### Test Naming Convention
 
-```javascript
+```typescript
+import test from 'node:test';
+
 test('Feature Name', async (t) => {
   // Pattern: should <action> when <condition>
   await t.test('should calculate RMS when audio has silence', () => {});
@@ -363,7 +359,11 @@ test('Feature Name', async (t) => {
 
 ### Standard Test Structure (Arrange-Act-Assert)
 
-```javascript
+```typescript
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createTestContext } from '../helpers/test-context';
+
 test('Feature Name', async (t) => {
   await t.test('should do something', () => {
     // Arrange - Set up test data
@@ -381,7 +381,7 @@ test('Feature Name', async (t) => {
 
 ### Testing Async Operations
 
-```javascript
+```typescript
 await t.test('async operation', (t, done) => {
   const { capture, native } = createCaptureContext();
 
@@ -398,8 +398,8 @@ await t.test('async operation', (t, done) => {
 
 ### Testing Events
 
-```javascript
-const { waitForEvent } = require('../helpers/test-context');
+```typescript
+import { waitForEvent } from '../helpers/test-context';
 
 await t.test('event emission', async () => {
   const { capture } = createCaptureContext();
@@ -414,18 +414,19 @@ await t.test('event emission', async () => {
 
 ### Testing Errors
 
-```javascript
-const { assertAudioCaptureError } = require('../helpers/assertions');
+```typescript
+import { assertAudioCaptureError } from '../helpers/assertions';
+import { ErrorCode } from '../../dist';
 
 await t.test('error handling', () => {
-  const { AudioCapture, ErrorCodes } = createTestContext();
+  const { AudioCapture } = createTestContext();
   const capture = new AudioCapture();
 
   assert.throws(() => {
     capture.startCapture('NonExistent');
   }, (err) => {
     assertAudioCaptureError(err, {
-      code: ErrorCodes.APP_NOT_FOUND
+      code: ErrorCode.APP_NOT_FOUND
     });
     return true;
   });
@@ -485,8 +486,8 @@ await t.test('error handling', () => {
 Point new team members to:
 1. **tests/README.md** (this file) - Complete testing guide
 2. **tests/.test-template.js** - Template for new tests
-3. **tests/fixtures/mock-data.js** - Available test data
-4. **tests/helpers/** - Available utilities
+3. **tests/fixtures/mock-data.ts** - Available test data
+4. **tests/helpers/** - Available utilities (TypeScript)
 
 Have them:
 - Read the "Real-World Workflows" section
@@ -509,9 +510,9 @@ mkdir tests/e2e
 
 ### Easy to Add New Helpers
 
-```javascript
-// tests/helpers/performance.js
-function measureExecutionTime(fn) {
+```typescript
+// tests/helpers/performance.ts
+export function measureExecutionTime(fn: () => void): number {
   const start = performance.now();
   fn();
   return performance.now() - start;
@@ -520,9 +521,9 @@ function measureExecutionTime(fn) {
 
 ### Easy to Add New Fixtures
 
-```javascript
-// tests/fixtures/audio-samples.js
-const SAMPLE_PATTERNS = {
+```typescript
+// tests/fixtures/audio-samples.ts
+export const SAMPLE_PATTERNS = {
   sine: createSineWave(),
   square: createSquareWave(),
   noise: createWhiteNoise()
@@ -549,18 +550,18 @@ The framework easily integrates with:
 
 **How do I run just my tests?**
 ```bash
-npm test tests/unit/my-test.test.js
+npm test tests/unit/my-test.test.ts
 ```
 
 **How do I create mock data?**
-```javascript
-const { createMockApp } = require('../helpers/factories');
+```typescript
+import { createMockApp } from '../helpers/factories';
 const app = createMockApp({ processId: 999 });
 ```
 
 **How do I simulate audio?**
-```javascript
-const { createCaptureContext } = require('../helpers/test-context');
+```typescript
+import { createCaptureContext } from '../helpers/test-context';
 const { capture, native } = createCaptureContext();
 native.simulateAudio();
 ```

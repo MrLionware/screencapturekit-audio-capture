@@ -7,12 +7,24 @@
  * - Stream lifecycle and cleanup
  */
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { Readable } = require('node:stream');
-const { createNativeMock } = require('../fixtures/mock-native');
-const { loadSDKWithMock } = require('../helpers/test-utils');
-const { MOCK_APPS } = require('../fixtures/mock-data');
+import test, { type TestContext } from 'node:test';
+import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
+import { MockScreenCaptureKit, type NativeAudioSample, type NativeCaptureConfig } from '../fixtures/mock-native';
+import { loadSDKWithMock } from '../helpers/test-utils';
+import { MOCK_APPS } from '../fixtures/mock-data';
+import type { CaptureInfo } from '../../dist/types';
+
+function createSampleCallback(): NativeAudioSample {
+  const floatData = new Float32Array(1024);
+  const buffer = Buffer.from(floatData.buffer);
+  return {
+    data: buffer,
+    sampleRate: 48000,
+    channelCount: 2,
+    timestamp: 123
+  };
+}
 
 test('AudioStream', async (t) => {
   await t.test('Basic Stream Creation', async (t) => {
@@ -22,21 +34,14 @@ test('AudioStream', async (t) => {
           getAvailableApps() {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          startCapture(_pid: number, _config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             // Simulate async data flow
             setTimeout(() => {
-              const floatData = new Float32Array(1024);
-              const buffer = Buffer.from(floatData.buffer);
-              callback({
-                data: buffer,
-                sampleRate: 48000,
-                channelCount: 2,
-                timestamp: 123
-              });
+              callback(createSampleCallback());
             }, 10);
             return true;
           }
-          stopCapture() {}
+          stopCapture(): void { }
         }
       };
 
@@ -49,26 +54,19 @@ test('AudioStream', async (t) => {
       assert.equal(typeof stream.pipe, 'function');
     });
 
-    await t.test('should emit data events', (t, done) => {
+    await t.test('should emit data events', (t: TestContext, done: () => void) => {
       const mockNative = {
         ScreenCaptureKit: class {
           getAvailableApps() {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          startCapture(_pid: number, _config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             setTimeout(() => {
-              const floatData = new Float32Array(1024);
-              const buffer = Buffer.from(floatData.buffer);
-              callback({
-                data: buffer,
-                sampleRate: 48000,
-                channelCount: 2,
-                timestamp: 123
-              });
+              callback(createSampleCallback());
             }, 10);
             return true;
           }
-          stopCapture() {}
+          stopCapture(): void { }
         }
       };
 
@@ -76,33 +74,26 @@ test('AudioStream', async (t) => {
       const capture = new AudioCapture();
       const stream = capture.createAudioStream('Music Player');
 
-      stream.once('data', (chunk) => {
+      stream.once('data', (chunk: Buffer) => {
         assert.ok(chunk instanceof Buffer);
         stream.destroy();
         done();
       });
     });
 
-    await t.test('should emit objects in objectMode', (t, done) => {
+    await t.test('should emit objects in objectMode', (t: TestContext, done: () => void) => {
       const mockNative = {
         ScreenCaptureKit: class {
           getAvailableApps() {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          startCapture(_pid: number, _config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             setTimeout(() => {
-              const floatData = new Float32Array(1024);
-              const buffer = Buffer.from(floatData.buffer);
-              callback({
-                data: buffer,
-                sampleRate: 48000,
-                channelCount: 2,
-                timestamp: 123
-              });
+              callback(createSampleCallback());
             }, 10);
             return true;
           }
-          stopCapture() {}
+          stopCapture(): void { }
         }
       };
 
@@ -123,22 +114,22 @@ test('AudioStream', async (t) => {
   });
 
   await t.test('Stream Modes', async (t) => {
-    await t.test('should stream raw buffers by default', (t, done) => {
-      let activeCallback = null;
+    await t.test('should stream raw buffers by default', (t: TestContext, done: () => void) => {
+      let activeCallback: ((sample: NativeAudioSample) => void) | null = null;
 
       const mockNative = {
-        ScreenCaptureKit: class {
-          getAvailableApps() {
+        ScreenCaptureKit: class extends MockScreenCaptureKit {
+          override getAvailableApps() {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          override startCapture(pid: number, config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             activeCallback = callback;
-            return true;
+            return super.startCapture(pid, config, callback);
           }
-          stopCapture() {
+          override stopCapture(): void {
             activeCallback = null;
           }
-          isCapturing() {
+          override isCapturing(): boolean {
             return !!activeCallback;
           }
         }
@@ -151,8 +142,8 @@ test('AudioStream', async (t) => {
       assert.ok(stream instanceof AudioStream);
       assert.ok(stream instanceof Readable);
 
-      const receivedChunks = [];
-      stream.on('data', (chunk) => {
+      const receivedChunks: Buffer[] = [];
+      stream.on('data', (chunk: Buffer) => {
         receivedChunks.push(chunk);
         if (receivedChunks.length === 1) {
           stream.stop();
@@ -175,22 +166,22 @@ test('AudioStream', async (t) => {
       }, 10);
     });
 
-    await t.test('should stream objects when objectMode is true', (t, done) => {
-      let activeCallback = null;
+    await t.test('should stream objects when objectMode is true', (t: TestContext, done: () => void) => {
+      let activeCallback: ((sample: NativeAudioSample) => void) | null = null;
 
       const mockNative = {
-        ScreenCaptureKit: class {
-          getAvailableApps() {
+        ScreenCaptureKit: class extends MockScreenCaptureKit {
+          override getAvailableApps() {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          override startCapture(pid: number, config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             activeCallback = callback;
-            return true;
+            return super.startCapture(pid, config, callback);
           }
-          stopCapture() {
+          override stopCapture(): void {
             activeCallback = null;
           }
-          isCapturing() {
+          override isCapturing(): boolean {
             return !!activeCallback;
           }
         }
@@ -202,8 +193,8 @@ test('AudioStream', async (t) => {
         objectMode: true
       });
 
-      const receivedChunks = [];
-      stream.on('data', (chunk) => {
+      const receivedChunks: any[] = [];
+      stream.on('data', (chunk: any) => {
         receivedChunks.push(chunk);
         if (receivedChunks.length === 1) {
           stream.stop();
@@ -229,24 +220,24 @@ test('AudioStream', async (t) => {
   });
 
   await t.test('Stream Lifecycle', async (t) => {
-    await t.test('should stop capture when stream is destroyed', (t, done) => {
-      let activeCallback = null;
+    await t.test('should stop capture when stream is destroyed', (t: TestContext, done: () => void) => {
+      let activeCallback: ((sample: NativeAudioSample) => void) | null = null;
       let stopCalled = false;
 
       const mockNative = {
-        ScreenCaptureKit: class {
-          getAvailableApps() {
+        ScreenCaptureKit: class extends MockScreenCaptureKit {
+          override getAvailableApps() {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          override startCapture(pid: number, config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             activeCallback = callback;
-            return true;
+            return super.startCapture(pid, config, callback);
           }
-          stopCapture() {
+          override stopCapture(): void {
             stopCalled = true;
             activeCallback = null;
           }
-          isCapturing() {
+          override isCapturing(): boolean {
             return !!activeCallback;
           }
         }
@@ -257,7 +248,7 @@ test('AudioStream', async (t) => {
       const stream = capture.createAudioStream(100);
 
       // Start the stream flow
-      stream.on('data', () => {});
+      stream.on('data', () => { });
 
       setTimeout(() => {
         stream.destroy();
@@ -267,21 +258,21 @@ test('AudioStream', async (t) => {
     });
 
     await t.test('should match underlying capture info', async () => {
-      let activeCallback = null;
+      let activeCallback: ((sample: NativeAudioSample) => void) | null = null;
 
       const mockNative = {
-        ScreenCaptureKit: class {
-          getAvailableApps() {
+        ScreenCaptureKit: class extends MockScreenCaptureKit {
+          override getAvailableApps() {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          override startCapture(pid: number, config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             activeCallback = callback;
-            return true;
+            return super.startCapture(pid, config, callback);
           }
-          stopCapture() {
+          override stopCapture(): void {
             activeCallback = null;
           }
-          isCapturing() {
+          override isCapturing(): boolean {
             return !!activeCallback;
           }
         }
@@ -293,8 +284,8 @@ test('AudioStream', async (t) => {
         objectMode: true
       });
 
-      stream.on('data', () => {});
-      await new Promise((resolve) => capture.once('start', resolve));
+      stream.on('data', () => { });
+      await new Promise<void>((resolve) => capture.once('start', resolve));
 
       if (activeCallback) {
         const buffer = Buffer.alloc(1024);
@@ -318,15 +309,16 @@ test('AudioStream', async (t) => {
     await t.test('should stream audio data', () => {
       const mockNative = {
         ScreenCaptureKit: class {
+          private callback: ((sample: NativeAudioSample) => void) | null = null;
           getAvailableApps() {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          startCapture(_pid: number, _config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             this.callback = callback;
             return true;
           }
-          stopCapture() {}
-          isCapturing() {
+          stopCapture(): void { }
+          isCapturing(): boolean {
             return true;
           }
         }
@@ -334,11 +326,11 @@ test('AudioStream', async (t) => {
 
       const { AudioCapture, AudioStream } = loadSDKWithMock({ nativeMock: mockNative });
 
-      return new Promise((resolve, reject) => {
+      return new Promise<void>((resolve, reject) => {
         const capture = new AudioCapture();
         const stream = new AudioStream(capture, 'Example App');
 
-        stream.on('data', (chunk) => {
+        stream.on('data', (chunk: Buffer) => {
           try {
             assert.ok(Buffer.isBuffer(chunk));
             stream.destroy();
@@ -365,15 +357,16 @@ test('AudioStream', async (t) => {
     await t.test('should stream objects in objectMode', () => {
       const mockNative = {
         ScreenCaptureKit: class {
+          private callback: ((sample: NativeAudioSample) => void) | null = null;
           getAvailableApps() {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          startCapture(_pid: number, _config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             this.callback = callback;
             return true;
           }
-          stopCapture() {}
-          isCapturing() {
+          stopCapture(): void { }
+          isCapturing(): boolean {
             return true;
           }
         }
@@ -381,7 +374,7 @@ test('AudioStream', async (t) => {
 
       const { AudioCapture, AudioStream } = loadSDKWithMock({ nativeMock: mockNative });
 
-      return new Promise((resolve, reject) => {
+      return new Promise<void>((resolve, reject) => {
         const capture = new AudioCapture();
         const stream = new AudioStream(capture, 'Example App', {
           objectMode: true
@@ -412,15 +405,16 @@ test('AudioStream', async (t) => {
     await t.test('should stop capture when destroyed', () => {
       const mockNative = {
         ScreenCaptureKit: class {
+          private callback: ((sample: NativeAudioSample) => void) | null = null;
           getAvailableApps() {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          startCapture(_pid: number, _config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             this.callback = callback;
             return true;
           }
-          stopCapture() {}
-          isCapturing() {
+          stopCapture(): void { }
+          isCapturing(): boolean {
             return true;
           }
         }
@@ -428,7 +422,7 @@ test('AudioStream', async (t) => {
 
       const { AudioCapture, AudioStream } = loadSDKWithMock({ nativeMock: mockNative });
 
-      return new Promise((resolve, reject) => {
+      return new Promise<void>((resolve, reject) => {
         const capture = new AudioCapture();
         const stream = new AudioStream(capture, 'Example App');
 
@@ -444,7 +438,7 @@ test('AudioStream', async (t) => {
             assert.equal(capture.listenerCount('audio'), 0);
             resolve();
           } catch (err) {
-            reject(err);
+            reject(err as Error);
           }
         }, 10);
       });

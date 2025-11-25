@@ -7,16 +7,16 @@
  * - Stream pipeline integration
  */
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { Readable } = require('node:stream');
-const { createNativeMock } = require('../fixtures/mock-native');
-const { loadSDKWithMock } = require('../helpers/test-utils');
-const { MOCK_APPS } = require('../fixtures/mock-data');
+import test, { type TestContext } from 'node:test';
+import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
+import { loadSDKWithMock } from '../helpers/test-utils';
+import { MOCK_APPS } from '../fixtures/mock-data';
+import type { ApplicationInfo, AppIdentifier, AudioSample, AudioStreamOptions } from '../../dist/types';
 
 test('STTConverter', async (t) => {
   await t.test('Format Conversion', async (t) => {
-    await t.test('should convert Float32 to Int16', (t, done) => {
+    await t.test('should convert Float32 to Int16', (t: TestContext, done: () => void) => {
       const { STTConverter } = loadSDKWithMock();
       // Set channels to 2 to prevent implicit downmixing (STTConverter defaults to channels: 1)
       const converter = new STTConverter({
@@ -29,7 +29,7 @@ test('STTConverter', async (t) => {
       input.writeFloatLE(1.0, 0);
       input.writeFloatLE(-1.0, 4);
 
-      converter.on('data', (chunk) => {
+      converter.on('data', (chunk: Buffer) => {
         assert.ok(chunk instanceof Buffer);
         assert.equal(chunk.length, 4); // 2 samples * 2 bytes
         assert.equal(chunk.readInt16LE(0), 32767);
@@ -50,7 +50,7 @@ test('STTConverter', async (t) => {
       const floatData = new Float32Array([1.0, -1.0, 0.0, 0.5]);
       const inputBuffer = Buffer.from(floatData.buffer);
 
-      const outputBuffer = converter._convertToInt16(inputBuffer);
+      const outputBuffer = (converter as any)._convertToInt16(inputBuffer);
       const int16Data = new Int16Array(outputBuffer.buffer, outputBuffer.byteOffset, outputBuffer.length / 2);
 
       assert.equal(int16Data.length, 4);
@@ -62,7 +62,7 @@ test('STTConverter', async (t) => {
   });
 
   await t.test('Channel Downmixing', async (t) => {
-    await t.test('should downmix stereo to mono (Float32)', (t, done) => {
+    await t.test('should downmix stereo to mono (Float32)', (t: TestContext, done: () => void) => {
       const { STTConverter } = loadSDKWithMock();
       const converter = new STTConverter({
         format: 'float32',
@@ -76,7 +76,7 @@ test('STTConverter', async (t) => {
       floatView[1] = 0.0;
       const input = Buffer.from(ab);
 
-      converter.on('data', (chunk) => {
+      converter.on('data', (chunk: Buffer) => {
         assert.equal(chunk.length, 4); // 1 sample * 4 bytes
         const value = chunk.readFloatLE(0);
 
@@ -88,7 +88,7 @@ test('STTConverter', async (t) => {
       converter.write(input);
     });
 
-    await t.test('should downmix stereo to mono (Int16)', (t, done) => {
+    await t.test('should downmix stereo to mono (Int16)', (t: TestContext, done: () => void) => {
       const { STTConverter } = loadSDKWithMock();
       const converter = new STTConverter({
         format: 'int16',
@@ -103,13 +103,20 @@ test('STTConverter', async (t) => {
       intView[1] = 0;
       const inputBuffer = Buffer.from(ab);
 
-      const inputSample = {
+      const inputSample: AudioSample = {
         data: inputBuffer,
         format: 'int16',
-        channels: 2
+        channels: 2,
+        sampleRate: 48000,
+        timestamp: Date.now(),
+        durationMs: 0,
+        framesCount: 2,
+        sampleCount: 2,
+        rms: 0,
+        peak: 0
       };
 
-      converter.on('data', (chunk) => {
+      converter.on('data', (chunk: AudioSample) => {
         // In objectMode, we get a sample object back
         assert.equal(chunk.format, 'int16');
         assert.equal(chunk.channels, 1);
@@ -135,7 +142,7 @@ test('STTConverter', async (t) => {
       const floatData = new Float32Array([1.0, 0.0, 0.5, 0.5]);
       const inputBuffer = Buffer.from(floatData.buffer);
 
-      const outputBuffer = converter._stereoToMono(inputBuffer, 'float32');
+      const outputBuffer = (converter as any)._stereoToMono(inputBuffer, 'float32');
       const monoData = new Float32Array(outputBuffer.buffer, outputBuffer.byteOffset, outputBuffer.length / 4);
 
       assert.equal(monoData.length, 2);
@@ -148,7 +155,7 @@ test('STTConverter', async (t) => {
     await t.test('should transform stream data correctly', () => {
       const { STTConverter } = loadSDKWithMock();
 
-      return new Promise((resolve, reject) => {
+      return new Promise<void>((resolve, reject) => {
         const converter = new STTConverter({
           format: 'int16',
           channels: 1
@@ -156,7 +163,7 @@ test('STTConverter', async (t) => {
         const floatData = new Float32Array([1.0, 1.0]); // Stereo full volume
         const inputBuffer = Buffer.from(floatData.buffer);
 
-        converter.on('data', (chunk) => {
+        converter.on('data', (chunk: Buffer) => {
           try {
             // Should be mono int16
             // 1.0 + 1.0 / 2 = 1.0 -> 32767
@@ -165,7 +172,7 @@ test('STTConverter', async (t) => {
             assert.equal(int16Data[0], 32767);
             resolve();
           } catch (err) {
-            reject(err);
+            reject(err as Error);
           }
         });
 
@@ -181,13 +188,13 @@ test('STTConverter', async (t) => {
 test('createSTTStream', async (t) => {
   const mockNative = {
     ScreenCaptureKit: class {
-      getAvailableApps() {
+      getAvailableApps(): ApplicationInfo[] {
         return MOCK_APPS;
       }
-      startCapture() {
+      startCapture(): boolean {
         return true;
       }
-      stopCapture() {}
+      stopCapture(): void { }
     }
   };
 
@@ -198,9 +205,8 @@ test('createSTTStream', async (t) => {
     const sttStream = capture.createSTTStream(null, {
       autoSelect: true
     });
-
     assert.ok(sttStream instanceof STTConverter);
-    assert.equal(sttStream.app.applicationName, 'Example App'); // First app
+    assert.equal(sttStream.app!.applicationName, 'Example App'); // First app
   });
 
   await t.test('should throw when app not found', () => {
@@ -214,40 +220,41 @@ test('createSTTStream', async (t) => {
 
   await t.test('should wire options and expose stop helper', async () => {
     const capture = new AudioCapture();
-    const app = {
+    const app: ApplicationInfo = {
       processId: 999,
       bundleIdentifier: 'com.audio.mock',
       applicationName: 'Mock Audio'
     };
 
-    const selections = [];
-    capture.selectApp = (identifier) => {
-      selections.push(identifier);
+    const selections: AppIdentifier[] = [];
+    capture.selectApp = (identifier: AppIdentifier | null | undefined): ApplicationInfo | null => {
+      selections.push(identifier as AppIdentifier);
       return app;
     };
 
     class MockStream extends Readable {
+      public stopped: boolean = false;
+
       constructor() {
         super({
           objectMode: true
         });
-        this.stopped = false;
       }
-      _read() {}
-      stop() {
+      override _read(): void { }
+      stop(): void {
         this.stopped = true;
         this.push(null);
       }
-      emitSample(sample) {
+      emitSample(sample: AudioSample): void {
         this.push(sample);
       }
     }
 
     const mockStream = new MockStream();
-    let capturedIdentifier = null;
-    let capturedOptions = null;
+    let capturedIdentifier: AppIdentifier | null = null;
+    let capturedOptions: AudioStreamOptions | undefined;
 
-    capture.createAudioStream = (identifier, options) => {
+    capture.createAudioStream = (identifier: AppIdentifier, options?: AudioStreamOptions): any => {
       capturedIdentifier = identifier;
       capturedOptions = options;
       return mockStream;
@@ -263,11 +270,11 @@ test('createSTTStream', async (t) => {
 
     assert.deepEqual(selections, ['Mock Audio']);
     assert.equal(capturedIdentifier, app.processId);
-    assert.equal(capturedOptions.objectMode, true);
-    assert.equal(capturedOptions.format, 'float32', 'source stream should remain float32');
-    assert.equal(capturedOptions.minVolume, 0.2);
+    assert.equal(capturedOptions!.objectMode, true);
+    assert.equal(capturedOptions!.format, 'float32', 'source stream should remain float32');
+    assert.equal(capturedOptions!.minVolume, 0.2);
 
-    const convertedPromise = new Promise((resolve) => {
+    const convertedPromise = new Promise<AudioSample>((resolve) => {
       sttStream.once('data', resolve);
     });
 
@@ -277,7 +284,12 @@ test('createSTTStream', async (t) => {
       format: 'float32',
       channels: 2,
       sampleRate: 48000,
-      timestamp: 111
+      timestamp: 111,
+      durationMs: 0,
+      framesCount: 1,
+      sampleCount: 2,
+      rms: 0,
+      peak: 0
     });
 
     const converted = await convertedPromise;

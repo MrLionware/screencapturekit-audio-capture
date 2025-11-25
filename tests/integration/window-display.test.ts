@@ -9,11 +9,13 @@
  * - Real-world scenarios (sequential discovery, switching targets, etc.)
  */
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { loadSDKWithMock } = require('../helpers/test-utils');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { loadSDKWithMock } from '../helpers/test-utils';
+import { createNativeMock, MockScreenCaptureKit } from '../fixtures/mock-native';
+import type { ApplicationInfo, CaptureStatus } from '../../dist/types';
 
-const MOCK_APPS = [
+const MOCK_APPS: ApplicationInfo[] = [
   { processId: 100, bundleIdentifier: 'com.example.app', applicationName: 'Example App' },
   { processId: 200, bundleIdentifier: 'com.music.player', applicationName: 'Music Player' },
   { processId: 300, bundleIdentifier: 'com.apple.finder', applicationName: 'Finder' },
@@ -41,7 +43,7 @@ const MOCK_WINDOWS = [
     owningProcessId: 0, owningApplicationName: '',
     owningBundleIdentifier: ''
   }
-];
+] as any[];
 
 const MOCK_DISPLAYS = [
   {
@@ -54,35 +56,20 @@ const MOCK_DISPLAYS = [
     frame: { x: 1440, y: 0, width: 1920, height: 1080 },
     width: 1920, height: 1080, isMainDisplay: false
   }
-];
+] as any[];
 
 test('Window and Display Selection', async (t) => {
-  let lastNativeInstance = null;
+  let lastNativeInstance: (MockScreenCaptureKit & { windowStarts: any[]; displayStarts: any[]; appStarts: any[] }) | null = null;
 
+  const baseMock = createNativeMock({ apps: MOCK_APPS, windows: MOCK_WINDOWS, displays: MOCK_DISPLAYS });
   const mockNative = {
-    ScreenCaptureKit: class {
+    ScreenCaptureKit: class extends baseMock.ScreenCaptureKit {
       constructor() {
-        this.windowStarts = [];
-        this.displayStarts = [];
-        this.appStarts = [];
+        super();
         lastNativeInstance = this;
       }
-      getAvailableApps() { return MOCK_APPS; }
-      getAvailableWindows() { return MOCK_WINDOWS; }
-      getAvailableDisplays() { return MOCK_DISPLAYS; }
-      startCapture(pid, config, callback) {
-        this.appStarts.push({ pid, config, callback });
-        return true;
-      }
-      startCaptureForWindow(windowId, config, callback) {
-        this.windowStarts.push({ windowId, config, callback });
-        return true;
-      }
-      startCaptureForDisplay(displayId, config, callback) {
-        this.displayStarts.push({ displayId, config, callback });
-        return true;
-      }
-      stopCapture() {
+      override stopCapture(): void {
+        super.stopCapture();
         this.windowStarts = [];
         this.displayStarts = [];
         this.appStarts = [];
@@ -121,11 +108,11 @@ test('Window and Display Selection', async (t) => {
     const targetWindow = capture.getWindows({ onScreenOnly: true, requireTitle: true })[0];
     const nativeInstance = lastNativeInstance;
 
-    const startPromise = new Promise((resolve) => {
-      capture.once('start', (info) => {
+    const startPromise = new Promise<void>((resolve) => {
+      capture.once('start', (info: CaptureStatus) => {
         assert.equal(info.targetType, 'window');
-        assert.equal(info.window.windowId, targetWindow.windowId);
-        assert.equal(info.app.processId, targetWindow.owningProcessId);
+        assert.equal(info.window!.windowId, targetWindow.windowId);
+        assert.equal(info.app!.processId, targetWindow.owningProcessId);
         resolve();
       });
     });
@@ -133,21 +120,21 @@ test('Window and Display Selection', async (t) => {
     const success = capture.captureWindow(targetWindow.windowId, { channels: 1 });
     assert.equal(success, true);
     assert.ok(nativeInstance);
-    assert.equal(nativeInstance.windowStarts.length, 1);
-    assert.equal(nativeInstance.windowStarts[0].windowId, targetWindow.windowId);
-    assert.equal(nativeInstance.windowStarts[0].config.channels, 1);
+    assert.equal(nativeInstance!.windowStarts.length, 1);
+    assert.equal(nativeInstance!.windowStarts[0].windowId, targetWindow.windowId);
+    assert.equal(nativeInstance!.windowStarts[0].config.channels, 1);
 
-    const status = capture.getStatus();
+    const status = capture.getStatus() as CaptureStatus;
     assert.equal(status.targetType, 'window');
-    assert.equal(status.window.windowId, targetWindow.windowId);
+    assert.equal(status.window!.windowId, targetWindow.windowId);
     assert.equal(status.processId, targetWindow.owningProcessId);
 
     await startPromise;
 
-    const stopPromise = new Promise((resolve) => {
-      capture.once('stop', (info) => {
+    const stopPromise = new Promise<void>((resolve) => {
+      capture.once('stop', (info: CaptureStatus) => {
         assert.equal(info.targetType, 'window');
-        assert.equal(info.window.windowId, targetWindow.windowId);
+        assert.equal(info.window!.windowId, targetWindow.windowId);
         resolve();
       });
     });
@@ -158,7 +145,7 @@ test('Window and Display Selection', async (t) => {
 
   await t.test('should throw when window not found', () => {
     const capture = new AudioCapture();
-    assert.throws(() => capture.captureWindow(99999), (err) => {
+    assert.throws(() => capture.captureWindow(99999), (err: any) => {
       assert.equal(err.code, ErrorCodes.INVALID_ARGUMENT);
       return true;
     });
@@ -166,7 +153,7 @@ test('Window and Display Selection', async (t) => {
 
   await t.test('should validate windowId argument type', () => {
     const capture = new AudioCapture();
-    assert.throws(() => capture.captureWindow('not-a-number'), (err) => {
+    assert.throws(() => capture.captureWindow('not-a-number' as any), (err: any) => {
       assert.equal(err.code, ErrorCodes.INVALID_ARGUMENT);
       assert.equal(err.details.receivedType, 'string');
       return true;
@@ -178,10 +165,10 @@ test('Window and Display Selection', async (t) => {
     const display = capture.getDisplays()[0];
     const nativeInstance = lastNativeInstance;
 
-    const startPromise = new Promise((resolve) => {
-      capture.once('start', (info) => {
+    const startPromise = new Promise<void>((resolve) => {
+      capture.once('start', (info: CaptureStatus) => {
         assert.equal(info.targetType, 'display');
-        assert.equal(info.display.displayId, display.displayId);
+        assert.equal(info.display!.displayId, display.displayId);
         assert.equal(info.processId, null);
         resolve();
       });
@@ -191,21 +178,21 @@ test('Window and Display Selection', async (t) => {
     assert.equal(success, true);
 
     assert.ok(nativeInstance);
-    assert.equal(nativeInstance.displayStarts.length, 1);
-    assert.equal(nativeInstance.displayStarts[0].displayId, display.displayId);
-    assert.equal(nativeInstance.displayStarts[0].config.sampleRate, 44100);
+    assert.equal(nativeInstance!.displayStarts.length, 1);
+    assert.equal(nativeInstance!.displayStarts[0].displayId, display.displayId);
+    assert.equal(nativeInstance!.displayStarts[0].config.sampleRate, 44100);
 
-    const status = capture.getStatus();
+    const status = capture.getStatus() as CaptureStatus;
     assert.equal(status.targetType, 'display');
-    assert.equal(status.display.displayId, display.displayId);
+    assert.equal(status.display!.displayId, display.displayId);
     assert.equal(status.processId, null);
 
     await startPromise;
 
-    const stopPromise = new Promise((resolve) => {
-      capture.once('stop', (info) => {
+    const stopPromise = new Promise<void>((resolve) => {
+      capture.once('stop', (info: CaptureStatus) => {
         assert.equal(info.targetType, 'display');
-        assert.equal(info.display.displayId, display.displayId);
+        assert.equal(info.display!.displayId, display.displayId);
         resolve();
       });
     });
@@ -219,10 +206,10 @@ test('Window and Display Selection', async (t) => {
     const display = capture.getDisplays()[0];
     capture.captureDisplay(display.displayId, { channels: 2 });
 
-    const info = capture.getCurrentCapture();
+    const info = capture.getCurrentCapture()!;
     assert.ok(info);
     assert.equal(info.targetType, 'display');
-    assert.equal(info.display.displayId, display.displayId);
+    assert.equal(info.display!.displayId, display.displayId);
     assert.equal(info.app, null);
 
     capture.stopCapture();
@@ -230,7 +217,7 @@ test('Window and Display Selection', async (t) => {
 
   await t.test('should throw when display not found', () => {
     const capture = new AudioCapture();
-    assert.throws(() => capture.captureDisplay(123456), (err) => {
+    assert.throws(() => capture.captureDisplay(123456), (err: any) => {
       assert.equal(err.code, ErrorCodes.INVALID_ARGUMENT);
       return true;
     });
@@ -238,7 +225,7 @@ test('Window and Display Selection', async (t) => {
 
   await t.test('should validate displayId argument type', () => {
     const capture = new AudioCapture();
-    assert.throws(() => capture.captureDisplay('display'), (err) => {
+    assert.throws(() => capture.captureDisplay('display' as any), (err: any) => {
       assert.equal(err.code, ErrorCodes.INVALID_ARGUMENT);
       assert.equal(err.details.receivedType, 'string');
       return true;
@@ -247,36 +234,36 @@ test('Window and Display Selection', async (t) => {
 });
 
 test('Real-world Window and Display Scenarios', async (t) => {
-  let lastNativeInstance = null;
+  let lastNativeInstance: (MockScreenCaptureKit & { _capturing: boolean; _activeCallback: any; simulateAudio: () => void }) | null = null;
   let getAvailableCallCount = 0;
 
+  const baseMock = createNativeMock({ apps: MOCK_APPS, windows: MOCK_WINDOWS, displays: MOCK_DISPLAYS });
   const mockNative = {
-    ScreenCaptureKit: class {
+    ScreenCaptureKit: class extends baseMock.ScreenCaptureKit {
+      private _capturing = false;
+      private _activeCallback: ((sample: any) => void) | null = null;
+
       constructor() {
-        this.windowStarts = [];
-        this.displayStarts = [];
-        this.appStarts = [];
-        this._capturing = false;
-        this._activeCallback = null;
-        lastNativeInstance = this;
+        super();
+        lastNativeInstance = this as any;
       }
 
-      getAvailableApps() {
+      override getAvailableApps() {
         getAvailableCallCount++;
-        return MOCK_APPS;
+        return super.getAvailableApps();
       }
 
-      getAvailableWindows() {
+      override getAvailableWindows() {
         getAvailableCallCount++;
-        return MOCK_WINDOWS;
+        return super.getAvailableWindows();
       }
 
-      getAvailableDisplays() {
+      override getAvailableDisplays() {
         getAvailableCallCount++;
-        return MOCK_DISPLAYS;
+        return super.getAvailableDisplays();
       }
 
-      startCapture(pid, config, callback) {
+      override startCapture(pid: number, config: any, callback: (sample: any) => void): boolean {
         if (this._capturing) return false;
         this._capturing = true;
         this._activeCallback = callback;
@@ -284,7 +271,7 @@ test('Real-world Window and Display Scenarios', async (t) => {
         return true;
       }
 
-      startCaptureForWindow(windowId, config, callback) {
+      override startCaptureForWindow(windowId: number, config: any, callback: (sample: any) => void): boolean {
         if (this._capturing) return false;
         this._capturing = true;
         this._activeCallback = callback;
@@ -292,7 +279,7 @@ test('Real-world Window and Display Scenarios', async (t) => {
         return true;
       }
 
-      startCaptureForDisplay(displayId, config, callback) {
+      override startCaptureForDisplay(displayId: number, config: any, callback: (sample: any) => void): boolean {
         if (this._capturing) return false;
         this._capturing = true;
         this._activeCallback = callback;
@@ -300,17 +287,17 @@ test('Real-world Window and Display Scenarios', async (t) => {
         return true;
       }
 
-      stopCapture() {
+      override stopCapture(): void {
         this._capturing = false;
         this._activeCallback = null;
       }
 
-      isCapturing() {
+      override isCapturing(): boolean {
         return this._capturing;
       }
 
       // Helper to simulate audio callback
-      simulateAudio() {
+      simulateAudio(): void {
         if (this._activeCallback) {
           const floatData = new Float32Array(1024);
           floatData.fill(0.5);
@@ -360,7 +347,7 @@ test('Real-world Window and Display Scenarios', async (t) => {
     assert.equal(appWindows.length, 1, 'Example App should have 1 window');
     const targetWindow = appWindows[0];
 
-    const audioReceived = [];
+    const audioReceived: any[] = [];
     capture.on('audio', (sample) => audioReceived.push(sample));
 
     const success = capture.captureWindow(targetWindow.windowId, {
@@ -370,15 +357,15 @@ test('Real-world Window and Display Scenarios', async (t) => {
     });
     assert.equal(success, true);
 
-    lastNativeInstance.simulateAudio();
+    lastNativeInstance?.simulateAudio();
     assert.equal(audioReceived.length, 1);
     assert.equal(audioReceived[0].format, 'int16');
     assert.equal(audioReceived[0].channels, 2);
 
-    const status = capture.getStatus();
+    const status = capture.getStatus() as CaptureStatus;
     assert.equal(status.targetType, 'window');
-    assert.equal(status.window.windowId, targetWindow.windowId);
-    assert.equal(status.app.processId, exampleApp.processId);
+    assert.equal(status.window!.windowId, targetWindow.windowId);
+    assert.equal(status.app!.processId, exampleApp.processId);
 
     capture.stopCapture();
   });
@@ -391,24 +378,24 @@ test('Real-world Window and Display Scenarios', async (t) => {
 
     const secondaryDisplay = displays.find(d => !d.isMainDisplay);
     assert.ok(secondaryDisplay, 'Should find secondary display');
-    assert.equal(secondaryDisplay.displayId, 88);
+    assert.equal(secondaryDisplay!.displayId, 88);
 
-    const audioReceived = [];
+    const audioReceived: any[] = [];
     capture.on('audio', (sample) => audioReceived.push(sample));
 
-    const success = capture.captureDisplay(secondaryDisplay.displayId, {
+    const success = capture.captureDisplay(secondaryDisplay!.displayId, {
       format: 'float32',
       sampleRate: 48000
     });
     assert.equal(success, true);
 
-    lastNativeInstance.simulateAudio();
+    lastNativeInstance?.simulateAudio();
     assert.equal(audioReceived.length, 1);
     assert.equal(audioReceived[0].format, 'float32');
 
-    const status = capture.getStatus();
+    const status = capture.getStatus() as CaptureStatus;
     assert.equal(status.targetType, 'display');
-    assert.equal(status.display.displayId, secondaryDisplay.displayId);
+    assert.equal(status.display!.displayId, secondaryDisplay!.displayId);
     assert.equal(status.processId, null, 'Display capture should have null processId');
     assert.equal(status.app, null, 'Display capture should have null app');
 
@@ -437,7 +424,7 @@ test('Real-world Window and Display Scenarios', async (t) => {
     const app = capture.getApplications()[0];
     capture.startCapture(app.processId);
     assert.equal(capture.isCapturing(), true);
-    let status = capture.getStatus();
+    let status = capture.getStatus() as CaptureStatus;
     assert.equal(status.targetType, 'application');
     assert.equal(status.processId, app.processId);
 
@@ -447,18 +434,18 @@ test('Real-world Window and Display Scenarios', async (t) => {
 
     const window = capture.getWindows({ onScreenOnly: true })[0];
     capture.captureWindow(window.windowId);
-    status = capture.getStatus();
+    status = capture.getStatus() as CaptureStatus;
     assert.equal(status.targetType, 'window');
-    assert.equal(status.window.windowId, window.windowId);
+    assert.equal(status.window!.windowId, window.windowId);
 
     // Stop and switch to display capture
     capture.stopCapture();
 
     const display = capture.getDisplays()[0];
     capture.captureDisplay(display.displayId);
-    status = capture.getStatus();
+    status = capture.getStatus() as CaptureStatus;
     assert.equal(status.targetType, 'display');
-    assert.equal(status.display.displayId, display.displayId);
+    assert.equal(status.display!.displayId, display.displayId);
 
     capture.stopCapture();
   });
@@ -475,7 +462,7 @@ test('Real-world Window and Display Scenarios', async (t) => {
     const display = capture.getDisplays()[0];
     assert.throws(() => {
       capture.captureDisplay(display.displayId);
-    }, (err) => {
+    }, (err: any) => {
       assert.equal(err.code, ErrorCodes.ALREADY_CAPTURING);
       assert.equal(err.details.currentTarget.targetType, 'window');
       return true;
@@ -484,7 +471,7 @@ test('Real-world Window and Display Scenarios', async (t) => {
     // Try to start app capture while window capture is active
     assert.throws(() => {
       capture.startCapture(100);
-    }, (err) => {
+    }, (err: any) => {
       assert.equal(err.code, ErrorCodes.ALREADY_CAPTURING);
       return true;
     });
@@ -494,33 +481,33 @@ test('Real-world Window and Display Scenarios', async (t) => {
 
   await t.test('should process audio across all capture types', async () => {
     const capture = new AudioCapture();
-    const receivedSamples = {
+    const receivedSamples: Record<string, any[]> = {
       application: [],
       window: [],
       display: []
     };
 
     capture.on('audio', (sample) => {
-      const status = capture.getStatus();
+      const status = capture.getStatus() as CaptureStatus;
       receivedSamples[status.targetType].push(sample);
     });
 
     // Test application capture
     const app = capture.getApplications()[0];
     capture.startCapture(app.processId, { minVolume: 0.1 });
-    lastNativeInstance.simulateAudio();
+    lastNativeInstance?.simulateAudio();
     capture.stopCapture();
 
     // Test window capture
     const window = capture.getWindows({ onScreenOnly: true })[0];
     capture.captureWindow(window.windowId, { minVolume: 0.1 });
-    lastNativeInstance.simulateAudio();
+    lastNativeInstance?.simulateAudio();
     capture.stopCapture();
 
     // Test display capture
     const display = capture.getDisplays()[0];
     capture.captureDisplay(display.displayId, { minVolume: 0.1 });
-    lastNativeInstance.simulateAudio();
+    lastNativeInstance?.simulateAudio();
     capture.stopCapture();
 
     // Verify all received audio
@@ -545,7 +532,7 @@ test('Real-world Window and Display Scenarios', async (t) => {
     assert.ok(app, 'Should find Music Player');
 
     // Get all windows for that app
-    const windows = capture.getWindows({ processId: app.processId });
+    const windows = capture.getWindows({ processId: app!.processId });
     assert.ok(windows.length > 0, 'App should have windows');
 
     // Find active, on-screen window
@@ -553,17 +540,17 @@ test('Real-world Window and Display Scenarios', async (t) => {
     assert.ok(activeWindow, 'Should have on-screen window');
 
     // Start capture
-    const audioSamples = [];
+    const audioSamples: any[] = [];
     capture.on('audio', (sample) => audioSamples.push(sample));
 
-    capture.captureWindow(activeWindow.windowId, {
+    capture.captureWindow(activeWindow!.windowId, {
       format: 'int16',
       channels: 2,
       minVolume: 0.05
     });
 
     // Simulate receiving audio
-    lastNativeInstance.simulateAudio();
+    lastNativeInstance?.simulateAudio();
 
     // Verify results
     assert.equal(audioSamples.length, 1);
@@ -573,10 +560,10 @@ test('Real-world Window and Display Scenarios', async (t) => {
     assert.ok(sample.rms >= 0.05, 'RMS should exceed minVolume threshold');
 
     // Get current capture info
-    const currentCapture = capture.getCurrentCapture();
+    const currentCapture = capture.getCurrentCapture()!;
     assert.equal(currentCapture.targetType, 'window');
-    assert.equal(currentCapture.window.windowId, activeWindow.windowId);
-    assert.equal(currentCapture.app.applicationName, 'Music Player');
+    assert.equal(currentCapture.window!.windowId, activeWindow!.windowId);
+    assert.equal(currentCapture.app!.applicationName, 'Music Player');
 
     capture.stopCapture();
   });

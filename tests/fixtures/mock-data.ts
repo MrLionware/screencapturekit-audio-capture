@@ -5,10 +5,12 @@
  * Centralizing mock data ensures consistency and makes it easy to update.
  */
 
+import type { ApplicationInfo, WindowInfo, DisplayInfo } from '../../dist/types';
+
 /**
  * Standard mock applications for testing
  */
-const MOCK_APPS = [
+export const MOCK_APPS: ApplicationInfo[] = [
   {
     processId: 100,
     bundleIdentifier: 'com.example.app',
@@ -39,7 +41,7 @@ const MOCK_APPS = [
 /**
  * Mock applications for example tests
  */
-const EXAMPLE_MOCK_APPS = [
+export const EXAMPLE_MOCK_APPS: ApplicationInfo[] = [
   {
     processId: 101,
     bundleIdentifier: 'com.spotify.client',
@@ -60,7 +62,7 @@ const EXAMPLE_MOCK_APPS = [
 /**
  * Mock windows for testing window capture
  */
-const MOCK_WINDOWS = [
+export const MOCK_WINDOWS: WindowInfo[] = [
   {
     windowId: 1000,
     layer: 0,
@@ -99,7 +101,7 @@ const MOCK_WINDOWS = [
 /**
  * Mock windows for example tests
  */
-const EXAMPLE_MOCK_WINDOWS = [
+export const EXAMPLE_MOCK_WINDOWS: WindowInfo[] = [
   {
     windowId: 2001,
     layer: 0,
@@ -116,7 +118,7 @@ const EXAMPLE_MOCK_WINDOWS = [
 /**
  * Mock displays for testing display capture
  */
-const MOCK_DISPLAYS = [
+export const MOCK_DISPLAYS: DisplayInfo[] = [
   {
     displayId: 77,
     frame: { x: 0, y: 0, width: 1440, height: 900 },
@@ -136,7 +138,7 @@ const MOCK_DISPLAYS = [
 /**
  * Mock displays for example tests
  */
-const EXAMPLE_MOCK_DISPLAYS = [
+export const EXAMPLE_MOCK_DISPLAYS: DisplayInfo[] = [
   {
     displayId: 77,
     frame: { x: 0, y: 0, width: 1440, height: 900 },
@@ -145,12 +147,3 @@ const EXAMPLE_MOCK_DISPLAYS = [
     isMainDisplay: true
   }
 ];
-
-module.exports = {
-  MOCK_APPS,
-  EXAMPLE_MOCK_APPS,
-  MOCK_WINDOWS,
-  EXAMPLE_MOCK_WINDOWS,
-  MOCK_DISPLAYS,
-  EXAMPLE_MOCK_DISPLAYS
-};

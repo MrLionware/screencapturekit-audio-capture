@@ -7,12 +7,13 @@
  * - Audio processing (RMS, format conversion, volume threshold)
  */
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { createTestContext, createCaptureContext } = require('../helpers/test-context');
-const { createNativeMock } = require('../fixtures/mock-native');
-const { loadSDKWithMock } = require('../helpers/test-utils');
-const { MOCK_APPS } = require('../fixtures/mock-data');
+import test, { type TestContext } from 'node:test';
+import assert from 'node:assert/strict';
+import { createNativeMock } from '../fixtures/mock-native';
+import { loadSDKWithMock } from '../helpers/test-utils';
+import { MOCK_APPS } from '../fixtures/mock-data';
+import type { ApplicationInfo, CaptureStatus } from '../../dist/types';
+import type { NativeAudioSample, NativeCaptureConfig } from '../fixtures/mock-native';
 
 test('Capture Control', async (t) => {
   await t.test('Initialization', async (t) => {
@@ -22,8 +23,8 @@ test('Capture Control', async (t) => {
       const capture = new AudioCapture();
 
       assert.ok(capture instanceof AudioCapture);
-      assert.equal(capture.capturing, false);
-      assert.equal(capture.currentProcessId, null);
+      assert.equal((capture as any).capturing, false);
+      assert.equal((capture as any).currentProcessId, null);
 
       // Test activity tracking via public API
       const info = capture.getActivityInfo();
@@ -35,20 +36,20 @@ test('Capture Control', async (t) => {
 
   await t.test('Start and Stop', async (t) => {
     await t.test('should start capturing with valid app name', () => {
-      let capturedCallback = null;
-      let startCaptureCalledWith = null;
+      let capturedCallback: ((sample: NativeAudioSample) => void) | null = null;
+      let startCaptureCalledWith: { pid: number; config: NativeCaptureConfig } | null = null;
 
       const mockNative = {
         ScreenCaptureKit: class {
-          getAvailableApps() {
+          getAvailableApps(): ApplicationInfo[] {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          startCapture(pid: number, config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             startCaptureCalledWith = { pid, config };
             capturedCallback = callback;
             return true;
           }
-          stopCapture() {}
+          stopCapture(): void { }
         }
       };
 
@@ -58,25 +59,25 @@ test('Capture Control', async (t) => {
       const success = capture.startCapture('Music Player');
       assert.equal(success, true);
       assert.equal(capture.isCapturing(), true);
-      assert.equal(startCaptureCalledWith.pid, 200);
+      assert.equal(startCaptureCalledWith?.pid, 200);
       assert.equal(typeof capturedCallback, 'function');
 
       capture.stopCapture();
     });
 
     await t.test('should accept app object directly to bypass lookup', () => {
-      let startCaptureCalledWith = null;
+      let startCaptureCalledWith: { pid: number; config: NativeCaptureConfig } | null = null;
 
       const mockNative = {
         ScreenCaptureKit: class {
-          getAvailableApps() {
+          getAvailableApps(): ApplicationInfo[] {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          startCapture(pid: number, config: NativeCaptureConfig): boolean {
             startCaptureCalledWith = { pid, config };
             return true;
           }
-          stopCapture() {}
+          stopCapture(): void { }
         }
       };
 
@@ -84,29 +85,29 @@ test('Capture Control', async (t) => {
       const capture = new AudioCapture();
 
       // Pass app object directly (e.g., from verifyPermissions or selectApp)
-      const appObject = { processId: 200, bundleIdentifier: 'com.example.music', applicationName: 'Music Player' };
+      const appObject: ApplicationInfo = { processId: 200, bundleIdentifier: 'com.example.music', applicationName: 'Music Player' };
       const success = capture.startCapture(appObject);
 
       assert.equal(success, true);
       assert.equal(capture.isCapturing(), true);
-      assert.equal(startCaptureCalledWith.pid, 200, 'Should use processId from app object');
+      assert.equal(startCaptureCalledWith?.pid, 200, 'Should use processId from app object');
 
       capture.stopCapture();
     });
 
     await t.test('should fail when already capturing', () => {
-      let capturedCallback = null;
+      let capturedCallback: ((sample: NativeAudioSample) => void) | null = null;
 
       const mockNative = {
         ScreenCaptureKit: class {
-          getAvailableApps() {
+          getAvailableApps(): ApplicationInfo[] {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          startCapture(_pid: number, _config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             capturedCallback = callback;
             return true;
           }
-          stopCapture() {}
+          stopCapture(): void { }
         }
       };
 
@@ -115,14 +116,14 @@ test('Capture Control', async (t) => {
 
       capture.startCapture('Music Player');
 
-      let errorEmitted = null;
+      let errorEmitted: any = null;
       capture.once('error', (err) => {
         errorEmitted = err;
       });
 
       assert.throws(() => {
         capture.startCapture('Example App');
-      }, (err) => {
+      }, (err: any) => {
         assert.equal(err.code, ErrorCodes.ALREADY_CAPTURING);
         return true;
       });
@@ -131,20 +132,21 @@ test('Capture Control', async (t) => {
       assert.equal(errorEmitted.code, ErrorCodes.ALREADY_CAPTURING);
 
       capture.stopCapture();
+      void capturedCallback;
     });
 
-    await t.test('should stop capturing', (t, done) => {
+    await t.test('should stop capturing', (t: TestContext, done: () => void) => {
       let stopCaptureCalled = false;
 
       const mockNative = {
         ScreenCaptureKit: class {
-          getAvailableApps() {
+          getAvailableApps(): ApplicationInfo[] {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          startCapture(): boolean {
             return true;
           }
-          stopCapture() {
+          stopCapture(): void {
             stopCaptureCalled = true;
           }
         }
@@ -155,7 +157,7 @@ test('Capture Control', async (t) => {
 
       capture.startCapture('Music Player');
 
-      capture.once('stop', (data) => {
+      capture.once('stop', (data: CaptureStatus) => {
         assert.equal(data.processId, 200);
         assert.equal(capture.isCapturing(), false);
         assert.equal(stopCaptureCalled, true);
@@ -167,19 +169,19 @@ test('Capture Control', async (t) => {
   });
 
   await t.test('Audio Processing', async (t) => {
-    await t.test('should process RMS and format conversion', (t, done) => {
-      let capturedCallback = null;
+    await t.test('should process RMS and format conversion', (t: TestContext, done: () => void) => {
+      let capturedCallback: ((sample: NativeAudioSample) => void) | null = null;
 
       const mockNative = {
         ScreenCaptureKit: class {
-          getAvailableApps() {
+          getAvailableApps(): ApplicationInfo[] {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          startCapture(_pid: number, _config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             capturedCallback = callback;
             return true;
           }
-          stopCapture() {}
+          stopCapture(): void { }
         }
       };
 
@@ -198,7 +200,7 @@ test('Capture Control', async (t) => {
       }
       const buffer = Buffer.from(floatData.buffer);
 
-      const mockSample = {
+      const mockSample: NativeAudioSample = {
         data: buffer,
         sampleRate: 48000,
         channelCount: 2,
@@ -228,22 +230,22 @@ test('Capture Control', async (t) => {
       });
 
       // Simulate native callback
-      capturedCallback(mockSample);
+      capturedCallback?.(mockSample);
     });
 
-    await t.test('should filter audio below volume threshold', (t) => {
-      let capturedCallback = null;
+    await t.test('should filter audio below volume threshold', () => {
+      let capturedCallback: ((sample: NativeAudioSample) => void) | null = null;
 
       const mockNative = {
         ScreenCaptureKit: class {
-          getAvailableApps() {
+          getAvailableApps(): ApplicationInfo[] {
             return MOCK_APPS;
           }
-          startCapture(pid, config, callback) {
+          startCapture(_pid: number, _config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
             capturedCallback = callback;
             return true;
           }
-          stopCapture() {}
+          stopCapture(): void { }
         }
       };
 
@@ -255,7 +257,7 @@ test('Capture Control', async (t) => {
       }); // High threshold
 
       let audioEmitted = false;
-      const handler = () => {
+      const handler = (): void => {
         audioEmitted = true;
       };
       capture.on('audio', handler);
@@ -265,7 +267,7 @@ test('Capture Control', async (t) => {
       floatData.fill(0.1);
       const buffer = Buffer.from(floatData.buffer);
 
-      capturedCallback({
+      capturedCallback?.({
         data: buffer,
         sampleRate: 48000,
         channelCount: 2,

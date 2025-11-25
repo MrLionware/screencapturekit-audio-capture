@@ -8,23 +8,26 @@
  * - Extreme buffer sizes
  */
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { loadSDKWithMock } = require('../helpers/test-utils');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { loadSDKWithMock } from '../helpers/test-utils';
+import type { ApplicationInfo } from '../../dist/types';
+import type { NativeCaptureConfig } from '../fixtures/mock-native';
 
-const MOCK_APPS = [
+const MOCK_APPS: ApplicationInfo[] = [
   { processId: 100, bundleIdentifier: 'com.example.app', applicationName: 'Example App' }
 ];
 
 test('Configuration Validation', async (t) => {
   const mockNative = {
     ScreenCaptureKit: class {
-      getAvailableApps() { return MOCK_APPS; }
-      startCapture(pid, config, callback) {
+      public lastConfig: NativeCaptureConfig | undefined;
+      getAvailableApps(): ApplicationInfo[] { return MOCK_APPS; }
+      startCapture(_pid: number, config: NativeCaptureConfig): boolean {
         this.lastConfig = config;
         return true;
       }
-      stopCapture() {}
+      stopCapture(): void { }
     }
   };
 
@@ -60,7 +63,7 @@ test('Configuration Validation', async (t) => {
 
   await t.test('should handle invalid format strings', () => {
     const capture = new AudioCapture();
-    capture.startCapture(100, { format: 'invalid' });
+    capture.startCapture(100, { format: 'invalid' as any });
     assert.equal(capture.isCapturing(), true);
     capture.stopCapture();
   });

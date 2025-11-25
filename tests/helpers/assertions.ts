@@ -5,15 +5,27 @@
  * and provide better error messages.
  */
 
-const assert = require('node:assert/strict');
+import assert from 'node:assert/strict';
+import type { EventEmitter } from 'node:events';
+import type { Readable } from 'node:stream';
+import type { AudioSample, AudioFormat } from '../../dist/types';
+import type { AudioCapture } from '../../dist/audio-capture';
+
+/**
+ * Expected properties for audio sample assertion
+ */
+export interface ExpectedAudioSampleProperties {
+  format?: AudioFormat;
+  channels?: 1 | 2;
+  sampleRate?: number;
+  minRMS?: number;
+  maxRMS?: number;
+}
 
 /**
  * Assert that an audio sample has expected properties
- *
- * @param {Object} sample - Audio sample to validate
- * @param {Object} expected - Expected properties
  */
-function assertAudioSample(sample, expected = {}) {
+export function assertAudioSample(sample: AudioSample, expected: ExpectedAudioSampleProperties = {}): void {
   assert.ok(sample, 'Sample should exist');
   assert.ok(sample.data instanceof Buffer, 'Sample should have Buffer data');
 
@@ -43,12 +55,18 @@ function assertAudioSample(sample, expected = {}) {
 }
 
 /**
- * Assert that capture state is as expected
- *
- * @param {Object} capture - AudioCapture instance
- * @param {Object} expected - Expected state
+ * Expected capture state
  */
-function assertCaptureState(capture, expected) {
+export interface ExpectedCaptureState {
+  capturing?: boolean;
+  processId?: number | null;
+  targetType?: 'application' | 'window' | 'display';
+}
+
+/**
+ * Assert that capture state is as expected
+ */
+export function assertCaptureState(capture: AudioCapture, expected: ExpectedCaptureState): void {
   if (expected.capturing !== undefined) {
     assert.equal(
       capture.isCapturing(),
@@ -59,7 +77,7 @@ function assertCaptureState(capture, expected) {
 
   if (expected.processId !== undefined) {
     assert.equal(
-      capture.currentProcessId,
+      (capture as any).currentProcessId,
       expected.processId,
       `Process ID should be ${expected.processId}`
     );
@@ -80,12 +98,18 @@ function assertCaptureState(capture, expected) {
 }
 
 /**
- * Assert that an error has expected properties
- *
- * @param {Error} error - Error to validate
- * @param {Object} expected - Expected properties
+ * Expected error properties
  */
-function assertAudioCaptureError(error, expected = {}) {
+export interface ExpectedErrorProperties {
+  code?: string;
+  message?: RegExp;
+  details?: Record<string, unknown>;
+}
+
+/**
+ * Assert that an error has expected properties
+ */
+export function assertAudioCaptureError(error: any, expected: ExpectedErrorProperties = {}): void {
   assert.ok(error, 'Error should exist');
   assert.equal(error.name, 'AudioCaptureError', 'Should be AudioCaptureError');
 
@@ -111,13 +135,8 @@ function assertAudioCaptureError(error, expected = {}) {
 
 /**
  * Assert that a value is within a range
- *
- * @param {number} actual - Actual value
- * @param {number} expected - Expected value
- * @param {number} tolerance - Allowed deviation
- * @param {string} message - Error message
  */
-function assertNear(actual, expected, tolerance, message) {
+export function assertNear(actual: number, expected: number, tolerance: number, message?: string): void {
   const diff = Math.abs(actual - expected);
   assert.ok(
     diff <= tolerance,
@@ -126,12 +145,17 @@ function assertNear(actual, expected, tolerance, message) {
 }
 
 /**
- * Assert that a buffer contains valid audio data
- *
- * @param {Buffer} buffer - Buffer to validate
- * @param {Object} options - Validation options
+ * Options for audio buffer validation
  */
-function assertValidAudioBuffer(buffer, options = {}) {
+export interface AudioBufferValidationOptions {
+  format?: AudioFormat;
+  minLength?: number;
+}
+
+/**
+ * Assert that a buffer contains valid audio data
+ */
+export function assertValidAudioBuffer(buffer: Buffer, options: AudioBufferValidationOptions = {}): void {
   assert.ok(buffer instanceof Buffer, 'Should be a Buffer');
   assert.ok(buffer.length > 0, 'Buffer should not be empty');
 
@@ -148,12 +172,8 @@ function assertValidAudioBuffer(buffer, options = {}) {
 
 /**
  * Assert that listener count hasn't grown (no memory leak)
- *
- * @param {EventEmitter} emitter - Event emitter to check
- * @param {string} event - Event name
- * @param {number} maxListeners - Maximum allowed listeners
  */
-function assertNoListenerLeak(emitter, event, maxListeners = 10) {
+export function assertNoListenerLeak(emitter: EventEmitter, event: string, maxListeners: number = 10): void {
   const count = emitter.listenerCount(event);
   assert.ok(
     count <= maxListeners,
@@ -162,12 +182,18 @@ function assertNoListenerLeak(emitter, event, maxListeners = 10) {
 }
 
 /**
- * Assert that a stream is in expected state
- *
- * @param {Stream} stream - Stream to validate
- * @param {Object} expected - Expected state
+ * Expected stream state
  */
-function assertStreamState(stream, expected) {
+export interface ExpectedStreamState {
+  readable?: boolean;
+  destroyed?: boolean;
+  objectMode?: boolean;
+}
+
+/**
+ * Assert that a stream is in expected state
+ */
+export function assertStreamState(stream: Readable, expected: ExpectedStreamState): void {
   if (expected.readable !== undefined) {
     assert.equal(stream.readable, expected.readable, 'Stream readable state incorrect');
   }
@@ -184,13 +210,3 @@ function assertStreamState(stream, expected) {
     );
   }
 }
-
-module.exports = {
-  assertAudioSample,
-  assertCaptureState,
-  assertAudioCaptureError,
-  assertNear,
-  assertValidAudioBuffer,
-  assertNoListenerLeak,
-  assertStreamState
-};

@@ -8,11 +8,12 @@
  * - captureDisplay when startCaptureForDisplay missing
  */
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { loadSDKWithMock } = require('../helpers/test-utils');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { loadSDKWithMock } from '../helpers/test-utils';
+import type { ApplicationInfo } from '../../dist/types';
 
-const MOCK_APPS = [
+const MOCK_APPS: ApplicationInfo[] = [
   { processId: 100, bundleIdentifier: 'com.example.app', applicationName: 'Example App' },
   { processId: 200, bundleIdentifier: 'com.music.player', applicationName: 'Music Player' },
   { processId: 300, bundleIdentifier: 'com.apple.finder', applicationName: 'Finder' },
@@ -21,10 +22,8 @@ const MOCK_APPS = [
 test('Native Capability Guards', async (t) => {
   const mockNative = {
     ScreenCaptureKit: class {
-      constructor() {
-        this.startCaptureCalls = [];
-      }
-      getAvailableApps() {
+      public startCaptureCalls: any[] = [];
+      getAvailableApps(): ApplicationInfo[] {
         return MOCK_APPS;
       }
     }
@@ -33,9 +32,9 @@ test('Native Capability Guards', async (t) => {
   const { AudioCapture, ErrorCodes } = loadSDKWithMock({ nativeMock: mockNative });
 
   await t.test('should throw when getAvailableWindows missing', () => {
-    const capture = new AudioCapture();
+    const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & { captureKit: any };
     delete capture.captureKit.getAvailableWindows;
-    assert.throws(() => capture.getWindows(), (err) => {
+    assert.throws(() => capture.getWindows(), (err: any) => {
       assert.equal(err.code, ErrorCodes.CAPTURE_FAILED);
       assert.equal(err.details.missingMethod, 'getAvailableWindows');
       return true;
@@ -43,9 +42,9 @@ test('Native Capability Guards', async (t) => {
   });
 
   await t.test('should throw when getAvailableDisplays missing', () => {
-    const capture = new AudioCapture();
+    const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & { captureKit: any };
     delete capture.captureKit.getAvailableDisplays;
-    assert.throws(() => capture.getDisplays(), (err) => {
+    assert.throws(() => capture.getDisplays(), (err: any) => {
       assert.equal(err.code, ErrorCodes.CAPTURE_FAILED);
       assert.equal(err.details.missingMethod, 'getAvailableDisplays');
       return true;
@@ -53,7 +52,7 @@ test('Native Capability Guards', async (t) => {
   });
 
   await t.test('should throw when startCaptureForWindow missing', () => {
-    const capture = new AudioCapture();
+    const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & { captureKit: any };
     capture.captureKit.getAvailableWindows = () => [{
       windowId: 9000,
       owningProcessId: null,
@@ -63,7 +62,7 @@ test('Native Capability Guards', async (t) => {
     }];
     delete capture.captureKit.startCaptureForWindow;
 
-    assert.throws(() => capture.captureWindow(9000), (err) => {
+    assert.throws(() => capture.captureWindow(9000), (err: any) => {
       assert.equal(err.code, ErrorCodes.CAPTURE_FAILED);
       assert.equal(err.details.missingMethod, 'startCaptureForWindow');
       return true;
@@ -71,7 +70,7 @@ test('Native Capability Guards', async (t) => {
   });
 
   await t.test('should throw when startCaptureForDisplay missing', () => {
-    const capture = new AudioCapture();
+    const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & { captureKit: any };
     capture.captureKit.getAvailableDisplays = () => [{
       displayId: 42,
       frame: { x: 0, y: 0, width: 100, height: 100 },
@@ -81,7 +80,7 @@ test('Native Capability Guards', async (t) => {
     }];
     delete capture.captureKit.startCaptureForDisplay;
 
-    assert.throws(() => capture.captureDisplay(42), (err) => {
+    assert.throws(() => capture.captureDisplay(42), (err: any) => {
       assert.equal(err.code, ErrorCodes.CAPTURE_FAILED);
       assert.equal(err.details.missingMethod, 'startCaptureForDisplay');
       return true;

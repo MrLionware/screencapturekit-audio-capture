@@ -5,13 +5,29 @@
  * Makes tests more readable and maintainable.
  */
 
+import type { AudioSample, ApplicationInfo, WindowInfo, DisplayInfo, AudioFormat } from '../../dist/types';
+
+/**
+ * Options for creating audio samples
+ */
+export interface CreateAudioSampleOptions {
+  data?: Buffer;
+  bufferSize?: number;
+  durationMs?: number;
+  framesCount?: number;
+  sampleRate?: number;
+  channels?: 1 | 2;
+  format?: AudioFormat;
+  timestamp?: number;
+  rms?: number;
+  peak?: number;
+  sampleCount?: number;
+}
+
 /**
  * Create a mock audio sample
- *
- * @param {Object} overrides - Properties to override
- * @returns {Object} Audio sample object
  */
-function createAudioSample(overrides = {}) {
+export function createAudioSample(overrides: CreateAudioSampleOptions = {}): AudioSample {
   const buffer = Buffer.alloc(overrides.bufferSize || 16);
   if (!overrides.data) {
     buffer.writeFloatLE(0.25, 0);
@@ -33,27 +49,44 @@ function createAudioSample(overrides = {}) {
 }
 
 /**
- * Create a mock application
- *
- * @param {Object} overrides - Properties to override
- * @returns {Object} Application object
+ * Options for creating mock applications
  */
-function createMockApp(overrides = {}) {
+export interface CreateMockAppOptions {
+  processId?: number;
+  bundleIdentifier?: string;
+  applicationName?: string;
+}
+
+/**
+ * Create a mock application
+ */
+export function createMockApp(overrides: CreateMockAppOptions = {}): ApplicationInfo {
   return {
     processId: overrides.processId ?? 100,
     bundleIdentifier: overrides.bundleIdentifier ?? 'com.test.app',
-    applicationName: overrides.applicationName ?? 'Test App',
-    ...overrides
+    applicationName: overrides.applicationName ?? 'Test App'
   };
 }
 
 /**
- * Create a mock window
- *
- * @param {Object} overrides - Properties to override
- * @returns {Object} Window object
+ * Options for creating mock windows
  */
-function createMockWindow(overrides = {}) {
+export interface CreateMockWindowOptions {
+  windowId?: number;
+  layer?: number;
+  frame?: { x: number; y: number; width: number; height: number };
+  title?: string;
+  onScreen?: boolean;
+  active?: boolean;
+  owningProcessId?: number;
+  owningApplicationName?: string;
+  owningBundleIdentifier?: string;
+}
+
+/**
+ * Create a mock window
+ */
+export function createMockWindow(overrides: CreateMockWindowOptions = {}): WindowInfo {
   return {
     windowId: overrides.windowId ?? 1000,
     layer: overrides.layer ?? 0,
@@ -63,36 +96,38 @@ function createMockWindow(overrides = {}) {
     active: overrides.active ?? true,
     owningProcessId: overrides.owningProcessId ?? 100,
     owningApplicationName: overrides.owningApplicationName ?? 'Test App',
-    owningBundleIdentifier: overrides.owningBundleIdentifier ?? 'com.test.app',
-    ...overrides
+    owningBundleIdentifier: overrides.owningBundleIdentifier ?? 'com.test.app'
   };
 }
 
 /**
- * Create a mock display
- *
- * @param {Object} overrides - Properties to override
- * @returns {Object} Display object
+ * Options for creating mock displays
  */
-function createMockDisplay(overrides = {}) {
+export interface CreateMockDisplayOptions {
+  displayId?: number;
+  frame?: { x: number; y: number; width: number; height: number };
+  width?: number;
+  height?: number;
+  isMainDisplay?: boolean;
+}
+
+/**
+ * Create a mock display
+ */
+export function createMockDisplay(overrides: CreateMockDisplayOptions = {}): DisplayInfo {
   return {
     displayId: overrides.displayId ?? 77,
     frame: overrides.frame ?? { x: 0, y: 0, width: 1440, height: 900 },
     width: overrides.width ?? 1440,
     height: overrides.height ?? 900,
-    isMainDisplay: overrides.isMainDisplay ?? true,
-    ...overrides
+    isMainDisplay: overrides.isMainDisplay ?? true
   };
 }
 
 /**
  * Create a Float32 audio buffer
- *
- * @param {number} length - Number of samples
- * @param {number} value - Value to fill (default: 0.5)
- * @returns {Buffer} Audio buffer
  */
-function createFloat32Buffer(length = 1024, value = 0.5) {
+export function createFloat32Buffer(length: number = 1024, value: number = 0.5): Buffer {
   const floatData = new Float32Array(length);
   floatData.fill(value);
   return Buffer.from(floatData.buffer);
@@ -100,25 +135,22 @@ function createFloat32Buffer(length = 1024, value = 0.5) {
 
 /**
  * Create an Int16 audio buffer
- *
- * @param {number} length - Number of samples
- * @param {number} value - Value to fill (default: 16384)
- * @returns {Buffer} Audio buffer
  */
-function createInt16Buffer(length = 1024, value = 16384) {
+export function createInt16Buffer(length: number = 1024, value: number = 16384): Buffer {
   const intData = new Int16Array(length);
   intData.fill(value);
   return Buffer.from(intData.buffer);
 }
 
 /**
- * Create a buffer with specific audio pattern
- *
- * @param {string} pattern - Pattern type: 'sine', 'silence', 'noise', 'extreme'
- * @param {number} length - Number of samples
- * @returns {Buffer} Audio buffer
+ * Audio pattern types
  */
-function createAudioPattern(pattern, length = 1024) {
+export type AudioPattern = 'sine' | 'silence' | 'noise' | 'extreme' | 'nan';
+
+/**
+ * Create a buffer with specific audio pattern
+ */
+export function createAudioPattern(pattern: AudioPattern, length: number = 1024): Buffer {
   const floatData = new Float32Array(length);
 
   switch (pattern) {
@@ -147,13 +179,3 @@ function createAudioPattern(pattern, length = 1024) {
 
   return Buffer.from(floatData.buffer);
 }
-
-module.exports = {
-  createAudioSample,
-  createMockApp,
-  createMockWindow,
-  createMockDisplay,
-  createFloat32Buffer,
-  createInt16Buffer,
-  createAudioPattern
-};
