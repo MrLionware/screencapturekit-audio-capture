@@ -41,10 +41,8 @@ export type {
   AppIdentifier,
 } from './types';
 
-// Import native binding
-// Note: The native binding is loaded from ../index.js at runtime
-const nativeModule = require('../index');
-export const ScreenCaptureKit = nativeModule.ScreenCaptureKit;
+// Export native binding
+export { ScreenCaptureKit } from './native';
 
 // Default export for convenience
 export { AudioCapture as default } from './audio-capture';
