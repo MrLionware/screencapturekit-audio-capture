@@ -1,0 +1,958 @@
+"use strict";
+/**
+ * AudioCapture - High-level SDK wrapper for ScreenCaptureKit Audio Capture
+ * Provides an event-based, developer-friendly API
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AudioCapture = void 0;
+const events_1 = require("events");
+const audio_stream_1 = require("./audio-stream");
+const stt_converter_1 = require("./stt-converter");
+const errors_1 = require("./errors");
+/**
+ * Main AudioCapture class
+ * High-level API for capturing audio from macOS applications
+ */
+class AudioCapture extends events_1.EventEmitter {
+    /**
+     * Create a new AudioCapture instance
+     */
+    constructor() {
+        super();
+        this.capturing = false;
+        this.currentProcessId = null;
+        this.currentAppInfo = null;
+        this._currentTarget = null;
+        this.captureOptions = {
+            minVolume: 0,
+            format: 'float32',
+        };
+        // Activity tracking for smart app filtering/sorting
+        this._audioActivityCache = new Map();
+        this._activityTrackingEnabled = false;
+        this._activityDecayMs = 30000; // Remove apps from cache after 30s of inactivity
+        // Import the native binding
+        const nativeModule = require('../index');
+        this.captureKit = new nativeModule.ScreenCaptureKit();
+    }
+    // ==================== Application Discovery ====================
+    /**
+     * Get all available applications
+     * @param options - Filter options
+     * @returns Array of application information
+     */
+    getApplications(options = {}) {
+        const { includeEmpty = false } = options;
+        const apps = this.captureKit.getAvailableApps();
+        // Filter out apps with empty names by default (helper processes, background services)
+        if (!includeEmpty) {
+            return apps.filter((app) => app.applicationName &&
+                app.applicationName.trim().length > 0 &&
+                app.bundleIdentifier &&
+                app.bundleIdentifier.trim().length > 0);
+        }
+        return apps;
+    }
+    /**
+     * Get capturable windows exposed by ScreenCaptureKit
+     * @param options - Filter options
+     * @returns Array of window information objects
+     */
+    getWindows(options = {}) {
+        this._assertNativeMethod('getAvailableWindows', 'Window enumeration');
+        const windows = this.captureKit.getAvailableWindows() || [];
+        const { onScreenOnly = false, requireTitle = false, processId } = options;
+        return windows.filter((window) => {
+            if (onScreenOnly && !window.onScreen) {
+                return false;
+            }
+            if (requireTitle && (!window.title || window.title.trim().length === 0)) {
+                return false;
+            }
+            if (typeof processId === 'number' && window.owningProcessId !== processId) {
+                return false;
+            }
+            return true;
+        });
+    }
+    /**
+     * Get displays that can be captured
+     * @returns Array of display information objects
+     */
+    getDisplays() {
+        this._assertNativeMethod('getAvailableDisplays', 'Display enumeration');
+        return this.captureKit.getAvailableDisplays() || [];
+    }
+    /**
+     * Find application by name or bundle identifier
+     * @param identifier - Application name or bundle ID (case-insensitive, partial match)
+     * @returns Application info or null if not found
+     */
+    findApplication(identifier) {
+        const apps = this.getApplications();
+        const search = identifier.toLowerCase();
+        return (apps.find((app) => app.applicationName.toLowerCase().includes(search) ||
+            app.bundleIdentifier.toLowerCase().includes(search)) || null);
+    }
+    /**
+     * Find application by name (case-insensitive search)
+     * @param name - Application name to search for
+     * @returns Application info or null if not found
+     */
+    findByName(name) {
+        return this.findApplication(name);
+    }
+    /**
+     * Get only applications likely to produce audio
+     * Filters out system apps and utilities that typically don't have audio
+     * @param options - Filter options
+     * @returns Array of audio-capable applications
+     */
+    getAudioApps(options = {}) {
+        const { includeSystemApps = false, includeEmpty = false, sortByActivity = false, appList = null } = options;
+        const apps = Array.isArray(appList) ? appList : this.getApplications({ includeEmpty });
+        return this._filterAudioAppList(apps, { includeSystemApps, includeEmpty, sortByActivity });
+    }
+    /**
+     * Internal helper to filter/sort an app list down to likely audio sources
+     * @internal
+     */
+    _filterAudioAppList(apps, options) {
+        const { includeSystemApps, includeEmpty, sortByActivity } = options;
+        if (!Array.isArray(apps)) {
+            return [];
+        }
+        let filtered = includeEmpty
+            ? [...apps]
+            : apps.filter((app) => app &&
+                app.applicationName &&
+                app.applicationName.trim().length > 0 &&
+                app.bundleIdentifier &&
+                app.bundleIdentifier.trim().length > 0);
+        if (!includeSystemApps) {
+            const excludePatterns = [
+                /^finder$/i,
+                /^system/i,
+                /preferences$/i,
+                /settings$/i,
+                /^activity monitor$/i,
+                /^console$/i,
+                /^terminal$/i,
+                /^iterm/i,
+                /^ssh/i,
+                /^keychain/i,
+                /^calculator$/i,
+                /^notes$/i,
+                /^reminders$/i,
+                /^calendar$/i,
+                /^contacts$/i,
+                /^mail$/i,
+                /^messages$/i,
+                /^preview$/i,
+                /^textEdit$/i,
+                /^font book$/i,
+            ];
+            filtered = filtered.filter((app) => {
+                const name = app.applicationName || '';
+                const bundleId = app.bundleIdentifier || '';
+                if (excludePatterns.some((pattern) => pattern.test(name))) {
+                    return false;
+                }
+                // Exclude helper/background processes that typically aren't audio sources
+                if (bundleId.includes('AutoFill'))
+                    return false;
+                if (bundleId.includes('.Helper'))
+                    return false;
+                if (bundleId.includes('PlatformSupport'))
+                    return false;
+                if (bundleId.includes('.xpc.'))
+                    return false; // XPC services
+                if (name.toLowerCase().includes('autofill'))
+                    return false;
+                if (name.includes('(') && name.includes(')')) {
+                    // Filter out processes with parentheses like "Service Name (Parent App)"
+                    // These are typically helper processes, not the main app
+                    return false;
+                }
+                return true;
+            });
+        }
+        if (sortByActivity && this._activityTrackingEnabled) {
+            const now = Date.now();
+            for (const [pid, activity] of this._audioActivityCache.entries()) {
+                if (now - activity.lastSeen > this._activityDecayMs) {
+                    this._audioActivityCache.delete(pid);
+                }
+            }
+            filtered.sort((a, b) => {
+                const aActivity = this._audioActivityCache.get(a.processId);
+                const bActivity = this._audioActivityCache.get(b.processId);
+                const aTime = aActivity ? aActivity.lastSeen : 0;
+                const bTime = bActivity ? bActivity.lastSeen : 0;
+                return bTime - aTime;
+            });
+        }
+        return filtered;
+    }
+    /**
+     * Get application by process ID
+     * @param processId - Process ID
+     * @returns Application info or null if not found
+     */
+    getApplicationByPid(processId) {
+        const apps = this.getApplications();
+        return apps.find((app) => app.processId === processId) || null;
+    }
+    /**
+     * Smart app selection with fallback strategies
+     * Tries multiple methods to find an app: exact name, PID, bundle ID, partial match, audio apps
+     * @param identifiers - App identifier(s) to try in order
+     * @param options - Selection options
+     * @returns Application info or null if not found (unless throwOnNotFound is true)
+     * @throws {AudioCaptureError} If throwOnNotFound is true and no app found
+     */
+    selectApp(identifiers = null, options = {}) {
+        const { audioOnly = true, throwOnNotFound = false, appList = null, fallbackToFirst = false, sortByActivity = false, } = options;
+        let apps;
+        if (Array.isArray(appList)) {
+            apps = audioOnly
+                ? this._filterAudioAppList(appList, { includeSystemApps: false, includeEmpty: false, sortByActivity })
+                : [...appList];
+        }
+        else {
+            apps = audioOnly ? this.getAudioApps({ sortByActivity }) : this.getApplications();
+        }
+        // If no identifiers provided or empty array, return first audio app
+        if (!identifiers || (Array.isArray(identifiers) && identifiers.length === 0)) {
+            if (apps.length > 0) {
+                return apps[0];
+            }
+            if (throwOnNotFound) {
+                throw new errors_1.AudioCaptureError('No applications available', errors_1.ErrorCode.APP_NOT_FOUND, { suggestion: 'Check screen recording permissions' });
+            }
+            return null;
+        }
+        // Normalize to array
+        const identifierList = Array.isArray(identifiers) ? identifiers : [identifiers];
+        // Try each identifier in order
+        let hasValidIdentifier = false;
+        for (const identifier of identifierList) {
+            let app = null;
+            if (typeof identifier === 'number') {
+                hasValidIdentifier = true;
+                // Try as PID
+                app = apps.find((a) => a.processId === identifier) || null;
+            }
+            else if (typeof identifier === 'string') {
+                // Skip empty or whitespace-only strings
+                const search = identifier.toLowerCase().trim();
+                if (search.length === 0) {
+                    continue;
+                }
+                hasValidIdentifier = true;
+                // Try exact name match first
+                app = apps.find((a) => a.applicationName.toLowerCase() === search) || null;
+                // Try exact bundle ID match
+                if (!app) {
+                    app = apps.find((a) => a.bundleIdentifier.toLowerCase() === search) || null;
+                }
+                // Try partial name match
+                if (!app) {
+                    app = apps.find((a) => a.applicationName.toLowerCase().includes(search)) || null;
+                }
+                // Try partial bundle ID match
+                if (!app) {
+                    app = apps.find((a) => a.bundleIdentifier.toLowerCase().includes(search)) || null;
+                }
+            }
+            else if (typeof identifier === 'object' && identifier !== null && 'processId' in identifier) {
+                // Handle ApplicationInfo objects
+                hasValidIdentifier = true;
+                app = apps.find((a) => a.processId === identifier.processId) || null;
+            }
+            // Return first match
+            if (app) {
+                return app;
+            }
+        }
+        // If no valid identifiers were provided (all empty/whitespace), return first app
+        if (!hasValidIdentifier && apps.length > 0) {
+            return apps[0];
+        }
+        if (fallbackToFirst && apps.length > 0) {
+            return apps[0];
+        }
+        // No app found
+        if (throwOnNotFound) {
+            throw errors_1.AudioCaptureError.appNotFound(identifiers, apps.map((a) => a.applicationName));
+        }
+        return null;
+    }
+    // ==================== Activity Tracking ====================
+    /**
+     * Enable background tracking of audio activity
+     * Tracks which apps are producing audio for smarter filtering and sorting
+     * @param options - Tracking options
+     */
+    enableActivityTracking(options = {}) {
+        const { decayMs = 30000 } = options;
+        this._activityTrackingEnabled = true;
+        this._activityDecayMs = decayMs;
+    }
+    /**
+     * Disable activity tracking and clear the cache
+     */
+    disableActivityTracking() {
+        this._activityTrackingEnabled = false;
+        this._audioActivityCache.clear();
+    }
+    /**
+     * Get activity tracking status and statistics
+     * @returns Activity tracking info
+     */
+    getActivityInfo() {
+        const now = Date.now();
+        const recentApps = [];
+        for (const [pid, activity] of this._audioActivityCache.entries()) {
+            const age = now - activity.lastSeen;
+            if (age < this._activityDecayMs) {
+                recentApps.push({
+                    processId: pid,
+                    lastSeen: activity.lastSeen,
+                    ageMs: age,
+                    avgRMS: activity.avgRMS,
+                    sampleCount: activity.sampleCount,
+                });
+            }
+        }
+        // Sort by most recent first
+        recentApps.sort((a, b) => a.ageMs - b.ageMs);
+        return {
+            enabled: this._activityTrackingEnabled,
+            trackedApps: recentApps.length,
+            recentApps,
+        };
+    }
+    // ==================== Permissions ====================
+    /**
+     * Verify screen recording permissions
+     * Proactively checks if the app has necessary permissions before attempting capture
+     * @returns Permission status object
+     */
+    static verifyPermissions() {
+        const capture = new AudioCapture();
+        const apps = capture.getApplications();
+        if (apps.length === 0) {
+            return {
+                granted: false,
+                message: 'Screen Recording permission is not granted or no applications are available.',
+                remediation: 'To fix this:\n' +
+                    '1. Open System Preferences → Privacy & Security → Screen Recording\n' +
+                    '2. Add your terminal app (Terminal.app, iTerm2, VS Code, etc.)\n' +
+                    '3. Toggle it ON\n' +
+                    '4. Restart your terminal completely for changes to take effect',
+            };
+        }
+        return {
+            granted: true,
+            message: `Screen Recording permission granted. Found ${apps.length} available application(s).`,
+            availableApps: apps.length,
+            apps: apps, // Return the apps list so callers can reuse it
+        };
+    }
+    // ==================== Capture Control ====================
+    /**
+     * Get detailed status of current capture session
+     * @returns Status object or null if not capturing
+     */
+    getStatus() {
+        if (!this.capturing) {
+            return null;
+        }
+        const snapshot = this._createTargetSnapshot();
+        return {
+            capturing: true,
+            processId: snapshot ? snapshot.processId : null,
+            app: snapshot ? snapshot.app : null,
+            targetType: snapshot ? snapshot.targetType : 'application',
+            window: snapshot ? snapshot.window : null,
+            display: snapshot ? snapshot.display : null,
+            config: {
+                minVolume: this.captureOptions.minVolume,
+                format: this.captureOptions.format,
+            },
+        };
+    }
+    /**
+     * Start capturing audio from an application
+     * @param appIdentifier - Application name, bundle ID, process ID, or array of identifiers
+     * @param options - Capture options
+     * @returns true if capture started successfully
+     * @throws {AudioCaptureError} Throws structured error with code and details if capture fails
+     * @fires AudioCapture#start
+     * @fires AudioCapture#audio
+     * @fires AudioCapture#error
+     */
+    startCapture(appIdentifier, options = {}) {
+        let processId;
+        let appInfo;
+        if (typeof appIdentifier === 'string') {
+            const found = this.findApplication(appIdentifier);
+            if (!found) {
+                const apps = this.getApplications();
+                const error = apps.length === 0
+                    ? errors_1.AudioCaptureError.permissionDenied(0)
+                    : errors_1.AudioCaptureError.appNotFound(appIdentifier, apps.map((a) => a.applicationName));
+                this.emit('error', error);
+                throw error;
+            }
+            appInfo = found;
+            processId = appInfo.processId;
+        }
+        else if (typeof appIdentifier === 'number') {
+            processId = appIdentifier;
+            const found = this.getApplicationByPid(processId);
+            if (!found) {
+                const error = errors_1.AudioCaptureError.processNotFound(processId);
+                this.emit('error', error);
+                throw error;
+            }
+            appInfo = found;
+        }
+        else if (typeof appIdentifier === 'object' && appIdentifier !== null && 'processId' in appIdentifier) {
+            // Allow passing an app object directly (e.g., from getApplications())
+            processId = appIdentifier.processId;
+            appInfo = appIdentifier;
+        }
+        else {
+            const error = errors_1.AudioCaptureError.invalidArgument('Invalid appIdentifier. Must be string, number, or app object with processId.', {
+                receivedType: typeof appIdentifier,
+                expectedTypes: ['string', 'number', 'object with processId'],
+            });
+            this.emit('error', error);
+            throw error;
+        }
+        const target = {
+            type: 'application',
+            processId,
+            app: appInfo,
+            window: null,
+            display: null,
+            failureMessage: 'Failed to start capture',
+            failureDetails: {
+                processId,
+                app: appInfo,
+                suggestion: 'The application may not have visible windows or may not support audio capture.',
+            },
+        };
+        const nativeStarter = (nativeConfig, callback) => this.captureKit.startCapture(processId, nativeConfig, callback);
+        return this._startNativeCapture(target, options, nativeStarter);
+    }
+    /**
+     * Start capture for a specific window ID
+     * @param windowId - Window identifier from getWindows()
+     * @param options - Capture options (same as startCapture)
+     * @returns true if capture started successfully
+     */
+    captureWindow(windowId, options = {}) {
+        this._assertNativeMethod('startCaptureForWindow', 'Window capture');
+        if (typeof windowId !== 'number') {
+            throw errors_1.AudioCaptureError.invalidArgument('windowId must be a number.', {
+                receivedType: typeof windowId,
+                expectedTypes: ['number'],
+            });
+        }
+        const windowInfo = this.getWindows().find((window) => window.windowId === windowId);
+        if (!windowInfo) {
+            throw errors_1.AudioCaptureError.invalidArgument(`Window with ID ${windowId} not found. Call getWindows() to list available windows.`, { windowId });
+        }
+        const owningProcessId = typeof windowInfo.owningProcessId === 'number' ? windowInfo.owningProcessId : null;
+        const owningApp = owningProcessId ? this.getApplicationByPid(owningProcessId) : null;
+        const target = {
+            type: 'window',
+            processId: owningProcessId,
+            app: owningApp,
+            window: windowInfo,
+            display: null,
+            failureMessage: 'Failed to start window capture',
+            failureDetails: {
+                windowId,
+                owningProcessId,
+            },
+        };
+        const nativeStarter = (nativeConfig, callback) => this.captureKit.startCaptureForWindow(windowId, nativeConfig, callback);
+        return this._startNativeCapture(target, options, nativeStarter);
+    }
+    /**
+     * Start capture for a display
+     * @param displayId - Display identifier from getDisplays()
+     * @param options - Capture options (same as startCapture)
+     * @returns true if capture started successfully
+     */
+    captureDisplay(displayId, options = {}) {
+        this._assertNativeMethod('startCaptureForDisplay', 'Display capture');
+        if (typeof displayId !== 'number') {
+            throw errors_1.AudioCaptureError.invalidArgument('displayId must be a number.', {
+                receivedType: typeof displayId,
+                expectedTypes: ['number'],
+            });
+        }
+        const displayInfo = this.getDisplays().find((display) => display.displayId === displayId);
+        if (!displayInfo) {
+            throw errors_1.AudioCaptureError.invalidArgument(`Display with ID ${displayId} not found. Call getDisplays() to list available displays.`, { displayId });
+        }
+        const target = {
+            type: 'display',
+            processId: null,
+            app: null,
+            window: null,
+            display: displayInfo,
+            failureMessage: 'Failed to start display capture',
+            failureDetails: {
+                displayId,
+            },
+        };
+        const nativeStarter = (nativeConfig, callback) => this.captureKit.startCaptureForDisplay(displayId, nativeConfig, callback);
+        return this._startNativeCapture(target, options, nativeStarter);
+    }
+    /**
+     * Stop the current capture session
+     * @fires AudioCapture#stop
+     */
+    stopCapture() {
+        if (!this.capturing) {
+            return;
+        }
+        this.captureKit.stopCapture();
+        this.capturing = false;
+        const snapshot = this._createTargetSnapshot();
+        this.currentProcessId = null;
+        this.currentAppInfo = null;
+        this._currentTarget = null;
+        this.emit('stop', snapshot || {
+            processId: null,
+            app: null,
+            window: null,
+            display: null,
+            targetType: 'application',
+        });
+    }
+    /**
+     * Check if currently capturing
+     * @returns true if currently capturing
+     */
+    isCapturing() {
+        return this.capturing;
+    }
+    /**
+     * Get current capture info
+     * @returns Current capture info or null if not capturing
+     */
+    getCurrentCapture() {
+        if (!this.capturing) {
+            return null;
+        }
+        return this._createTargetSnapshot();
+    }
+    // ==================== Stream API ====================
+    /**
+     * Create a readable stream for audio capture
+     * Provides a stream-based alternative to the event-based API
+     * @param appIdentifier - Application name, bundle ID, or process ID
+     * @param options - Stream and capture options
+     * @returns Readable stream that emits audio data
+     */
+    createAudioStream(appIdentifier, options = {}) {
+        return new audio_stream_1.AudioStream(this, appIdentifier, options);
+    }
+    /**
+     * Create a pre-configured stream for Speech-to-Text (STT) engines
+     * Automatically converts to Int16 mono format - the most common STT input format
+     * @param appIdentifier - App name, PID, bundle ID, or array to try in order
+     * @param options - STT stream options
+     * @returns Transform stream ready to pipe to STT engine
+     */
+    createSTTStream(appIdentifier, options = {}) {
+        const { format = 'int16', channels = 1, minVolume, objectMode = false, autoSelect = true, ...captureOptions } = options;
+        // Try to select app using smart selection
+        let app = null;
+        if (appIdentifier) {
+            app = this.selectApp(appIdentifier, { audioOnly: true, throwOnNotFound: false });
+        }
+        // Auto-select if not found and autoSelect is true
+        if (!app && autoSelect) {
+            app = this.selectApp(null, { audioOnly: true, throwOnNotFound: false });
+        }
+        // If still no app, throw error
+        if (!app) {
+            throw new errors_1.AudioCaptureError('No application found for STT stream', errors_1.ErrorCode.APP_NOT_FOUND, {
+                requestedApp: appIdentifier,
+                suggestion: 'Start an audio application or check screen recording permissions',
+            });
+        }
+        // Create audio stream with appropriate settings
+        const audioStream = this.createAudioStream(app.processId, {
+            ...captureOptions,
+            format: 'float32', // Always get float32 from source
+            objectMode: true, // Need metadata for conversion
+            minVolume,
+        });
+        // Create STT converter
+        const converter = new stt_converter_1.STTConverter({ format, channels, objectMode });
+        // Pipe audio stream through converter
+        audioStream.pipe(converter);
+        // Forward errors
+        audioStream.on('error', (err) => converter.destroy(err));
+        // Add stop method to converter for convenience
+        converter.stop = () => audioStream.stop();
+        // Add app info to converter
+        converter.app = app;
+        return converter;
+    }
+    // ==================== Utility Methods ====================
+    /**
+     * Convert Buffer to Float32Array for easier audio processing
+     * @param buffer - Buffer containing Float32 PCM audio samples
+     * @returns Float32Array view of the buffer
+     */
+    static bufferToFloat32Array(buffer) {
+        return new Float32Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 4);
+    }
+    /**
+     * Convert RMS to decibels
+     * @param rms - RMS value (0.0 to 1.0)
+     * @returns dB level (-Infinity to 0)
+     */
+    static rmsToDb(rms) {
+        if (rms <= 0)
+            return -Infinity;
+        return 20 * Math.log10(rms);
+    }
+    /**
+     * Convert peak to decibels
+     * @param peak - Peak value (0.0 to 1.0)
+     * @returns dB level (-Infinity to 0)
+     */
+    static peakToDb(peak) {
+        if (peak <= 0)
+            return -Infinity;
+        return 20 * Math.log10(peak);
+    }
+    /**
+     * Calculate decibels from audio samples
+     * @param samples - Float32 audio samples
+     * @param method - 'rms' or 'peak'
+     * @returns dB level
+     */
+    static calculateDb(samples, method = 'rms') {
+        const floatView = new Float32Array(samples.buffer, samples.byteOffset, samples.length / 4);
+        if (method === 'peak') {
+            let peak = 0;
+            for (let i = 0; i < floatView.length; i++) {
+                const abs = Math.abs(floatView[i]);
+                if (abs > peak)
+                    peak = abs;
+            }
+            return AudioCapture.peakToDb(peak);
+        }
+        else {
+            // RMS
+            let sum = 0;
+            for (let i = 0; i < floatView.length; i++) {
+                sum += floatView[i] * floatView[i];
+            }
+            const rms = Math.sqrt(sum / floatView.length);
+            return AudioCapture.rmsToDb(rms);
+        }
+    }
+    /**
+     * Create a WAV file from PCM audio data
+     * @param buffer - PCM audio data (Float32 or Int16)
+     * @param options - WAV file options
+     * @returns Complete WAV file that can be written to disk
+     */
+    static writeWav(buffer, options) {
+        const { sampleRate, channels, format = 'float32' } = options;
+        // Validate required options
+        if (!sampleRate || !channels) {
+            throw new Error('sampleRate and channels are required options');
+        }
+        if (format !== 'float32' && format !== 'int16') {
+            throw new Error('format must be "float32" or "int16"');
+        }
+        // Calculate WAV format parameters
+        const isFloat = format === 'float32';
+        const audioFormat = isFloat ? 3 : 1; // 3 = IEEE Float, 1 = PCM
+        const bitsPerSample = isFloat ? 32 : 16;
+        const bytesPerSample = bitsPerSample / 8;
+        const blockAlign = channels * bytesPerSample;
+        const byteRate = sampleRate * blockAlign;
+        // Data size
+        const dataSize = buffer.length;
+        const fileSize = 36 + dataSize; // 36 bytes of headers + data
+        // Create buffer for complete WAV file
+        const wavBuffer = Buffer.allocUnsafe(44 + dataSize);
+        let offset = 0;
+        // Helper to write strings
+        const writeString = (str) => {
+            for (let i = 0; i < str.length; i++) {
+                wavBuffer[offset++] = str.charCodeAt(i);
+            }
+        };
+        // Helper to write 32-bit little-endian integer
+        const writeUInt32LE = (value) => {
+            wavBuffer.writeUInt32LE(value, offset);
+            offset += 4;
+        };
+        // Helper to write 16-bit little-endian integer
+        const writeUInt16LE = (value) => {
+            wavBuffer.writeUInt16LE(value, offset);
+            offset += 2;
+        };
+        // RIFF header
+        writeString('RIFF');
+        writeUInt32LE(fileSize);
+        writeString('WAVE');
+        // fmt chunk
+        writeString('fmt ');
+        writeUInt32LE(16); // fmt chunk size
+        writeUInt16LE(audioFormat); // audio format (1=PCM, 3=IEEE Float)
+        writeUInt16LE(channels); // number of channels
+        writeUInt32LE(sampleRate); // sample rate
+        writeUInt32LE(byteRate); // byte rate
+        writeUInt16LE(blockAlign); // block align
+        writeUInt16LE(bitsPerSample); // bits per sample
+        // data chunk
+        writeString('data');
+        writeUInt32LE(dataSize);
+        // Copy audio data
+        buffer.copy(wavBuffer, offset);
+        return wavBuffer;
+    }
+    // ==================== Private Methods ====================
+    /**
+     * Build native capture configuration
+     * @internal
+     */
+    _buildNativeConfig(options) {
+        return {
+            sampleRate: options.sampleRate || 48000,
+            channels: options.channels || 2,
+            bufferSize: options.bufferSize,
+            excludeCursor: options.excludeCursor !== undefined ? options.excludeCursor : true,
+        };
+    }
+    /**
+     * Start native capture with unified logic
+     * @internal
+     */
+    _startNativeCapture(target, options, startInvoker) {
+        if (this.capturing) {
+            const error = errors_1.AudioCaptureError.alreadyCapturing({
+                currentProcessId: this.currentProcessId,
+                currentApp: this.currentAppInfo,
+                currentTarget: this._createTargetSnapshot(),
+            });
+            this.emit('error', error);
+            throw error;
+        }
+        this.captureOptions = {
+            minVolume: options.minVolume || 0,
+            format: options.format || 'float32',
+        };
+        const nativeConfig = this._buildNativeConfig(options);
+        const processIdForActivity = typeof target.processId === 'number' ? target.processId : null;
+        const success = startInvoker(nativeConfig, (sample) => this._handleNativeSample(sample, processIdForActivity));
+        if (success) {
+            this.capturing = true;
+            this.currentProcessId = processIdForActivity;
+            this.currentAppInfo = target.app || (processIdForActivity ? this.getApplicationByPid(processIdForActivity) : null);
+            this._currentTarget = {
+                processId: this.currentProcessId,
+                app: this.currentAppInfo,
+                window: this._cloneWindowInfo(target.window),
+                display: this._cloneDisplayInfo(target.display),
+                targetType: target.type || 'application',
+            };
+            this.emit('start', this._createTargetSnapshot());
+        }
+        else {
+            const error = errors_1.AudioCaptureError.captureFailed(target.failureMessage, target.failureDetails);
+            this.emit('error', error);
+            throw error;
+        }
+        return success;
+    }
+    /**
+     * Handle native audio sample
+     * @internal
+     */
+    _handleNativeSample(sample, processIdForActivity) {
+        const rms = this._calculateRMS(sample.data);
+        const peak = this._calculatePeak(sample.data);
+        if (rms < this.captureOptions.minVolume) {
+            return;
+        }
+        let audioData = sample.data;
+        let actualFormat = 'float32';
+        if (this.captureOptions.format === 'int16') {
+            audioData = this._convertToInt16(sample.data);
+            actualFormat = 'int16';
+        }
+        const bytesPerSample = 4;
+        const totalSamples = sample.data.length / bytesPerSample;
+        const framesCount = totalSamples / sample.channelCount;
+        const durationMs = (framesCount / sample.sampleRate) * 1000;
+        const enhancedSample = {
+            data: audioData,
+            sampleRate: sample.sampleRate,
+            channels: sample.channelCount,
+            timestamp: sample.timestamp,
+            format: actualFormat,
+            sampleCount: totalSamples,
+            framesCount,
+            durationMs,
+            rms,
+            peak,
+        };
+        this.emit('audio', enhancedSample);
+        if (this._activityTrackingEnabled && typeof processIdForActivity === 'number') {
+            const now = Date.now();
+            const existing = this._audioActivityCache.get(processIdForActivity);
+            if (existing) {
+                const alpha = 0.1;
+                existing.avgRMS = existing.avgRMS * (1 - alpha) + rms * alpha;
+                existing.lastSeen = now;
+                existing.sampleCount++;
+            }
+            else {
+                this._audioActivityCache.set(processIdForActivity, {
+                    lastSeen: now,
+                    avgRMS: rms,
+                    sampleCount: 1,
+                });
+            }
+        }
+    }
+    /**
+     * Calculate RMS (Root Mean Square) volume level
+     * @internal
+     */
+    _calculateRMS(samples) {
+        if (samples.length === 0)
+            return 0;
+        const floatView = new Float32Array(samples.buffer, samples.byteOffset, samples.length / 4);
+        let sum = 0;
+        let validSamples = 0;
+        for (let i = 0; i < floatView.length; i++) {
+            const sample = floatView[i];
+            // Filter out NaN and extreme values
+            if (!isNaN(sample) && isFinite(sample)) {
+                // Clamp to reasonable audio range [-10, 10]
+                const clamped = Math.max(-10, Math.min(10, sample));
+                sum += clamped * clamped;
+                validSamples++;
+            }
+        }
+        if (validSamples === 0)
+            return 0;
+        return Math.sqrt(sum / validSamples);
+    }
+    /**
+     * Calculate peak volume level
+     * @internal
+     */
+    _calculatePeak(samples) {
+        if (samples.length === 0)
+            return 0;
+        const floatView = new Float32Array(samples.buffer, samples.byteOffset, samples.length / 4);
+        let peak = 0;
+        for (let i = 0; i < floatView.length; i++) {
+            const sample = floatView[i];
+            // Filter out NaN and extreme values
+            if (!isNaN(sample) && isFinite(sample)) {
+                // Clamp to reasonable audio range
+                const clamped = Math.max(-10, Math.min(10, sample));
+                const abs = Math.abs(clamped);
+                if (abs > peak)
+                    peak = abs;
+            }
+        }
+        return peak;
+    }
+    /**
+     * Convert Float32 audio samples to Int16 format
+     * @internal
+     */
+    _convertToInt16(samples) {
+        const floatView = new Float32Array(samples.buffer, samples.byteOffset, samples.length / 4);
+        const int16Buffer = Buffer.allocUnsafe(floatView.length * 2);
+        const int16View = new Int16Array(int16Buffer.buffer, int16Buffer.byteOffset, floatView.length);
+        for (let i = 0; i < floatView.length; i++) {
+            // Clamp to [-1.0, 1.0] and convert to Int16 range [-32768, 32767]
+            const clamped = Math.max(-1.0, Math.min(1.0, floatView[i]));
+            int16View[i] = Math.round(clamped * 32767);
+        }
+        return int16Buffer;
+    }
+    /**
+     * Create a snapshot of the current target
+     * @internal
+     */
+    _createTargetSnapshot(target = this._currentTarget) {
+        if (!target) {
+            return null;
+        }
+        return {
+            processId: typeof target.processId === 'number' ? target.processId : null,
+            app: this._cloneAppInfo(target.app),
+            window: this._cloneWindowInfo(target.window),
+            display: this._cloneDisplayInfo(target.display),
+            targetType: target.targetType || 'application',
+        };
+    }
+    /**
+     * Clone app info
+     * @internal
+     */
+    _cloneAppInfo(app) {
+        if (!app)
+            return null;
+        return { ...app };
+    }
+    /**
+     * Clone window info
+     * @internal
+     */
+    _cloneWindowInfo(window) {
+        if (!window)
+            return null;
+        return {
+            ...window,
+            frame: window.frame ? { ...window.frame } : null,
+        };
+    }
+    /**
+     * Clone display info
+     * @internal
+     */
+    _cloneDisplayInfo(display) {
+        if (!display)
+            return null;
+        return {
+            ...display,
+            frame: display.frame ? { ...display.frame } : null,
+        };
+    }
+    /**
+     * Assert that a native method exists
+     * @internal
+     */
+    _assertNativeMethod(methodName, featureDescription) {
+        if (!this.captureKit || typeof this.captureKit[methodName] !== 'function') {
+            throw new errors_1.AudioCaptureError(`${featureDescription} requires a rebuilt native addon. Reinstall or run "npm install" to compile the latest bindings.`, errors_1.ErrorCode.CAPTURE_FAILED, { missingMethod: methodName });
+        }
+    }
+}
+exports.AudioCapture = AudioCapture;
+//# sourceMappingURL=audio-capture.js.map

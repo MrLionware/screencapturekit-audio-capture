@@ -2,20 +2,25 @@
   "name": "screencapturekit-audio-capture",
   "version": "1.2.4",
   "description": "Native Node.js addon for capturing per-application audio on macOS using ScreenCaptureKit framework. Real-time audio streaming with event-based API.",
-  "main": "sdk.js",
-  "types": "index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "postinstall": "node-gyp rebuild",
-    "build": "node-gyp rebuild",
+    "postinstall": "npm run build:native && npm run build:ts",
+    "build": "npm run build:native && npm run build:ts",
+    "build:native": "node-gyp rebuild",
+    "build:ts": "tsc",
     "rebuild": "node-gyp rebuild",
-    "clean": "node-gyp clean",
-    "test": "node --test 'tests/**/*.test.js'",
-    "test:unit": "node --test 'tests/unit/*.test.js'",
-    "test:integration": "node --test 'tests/integration/*.test.js'",
-    "test:examples": "node --test 'tests/examples/*.test.js'",
-    "test:edge-cases": "node --test 'tests/edge-cases/*.test.js'",
-    "test:watch": "node --test --watch 'tests/**/*.test.js'",
-    "prepublishOnly": "npm run build"
+    "clean": "node-gyp clean && rimraf dist",
+    "test": "tsx --test 'tests/**/*.test.ts'",
+    "test:unit": "tsx --test 'tests/unit/*.test.ts'",
+    "test:integration": "tsx --test 'tests/integration/*.test.ts'",
+    "test:examples": "tsx --test 'tests/examples/*.test.ts'",
+    "test:edge-cases": "tsx --test 'tests/edge-cases/*.test.ts'",
+    "test:watch": "tsx --test --watch 'tests/**/*.test.ts'",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc --project tests/tsconfig.json",
+    "example:ts": "ts-node --project examples/tsconfig.json examples/typescript-example.ts"
   },
   "keywords": [
     "screencapturekit",
@@ -53,6 +58,7 @@
   "homepage": "https://github.com/mrlionware/screencapturekit-audio-capture#readme",
   "files": [
     "src/",
+    "dist/",
     "binding.gyp",
     "index.js",
     "sdk.js",
@@ -65,7 +71,12 @@
     "node-addon-api": "^7.0.0"
   },
   "devDependencies": {
-    "node-gyp": "^10.0.0"
+    "@types/node": "^20.19.25",
+    "node-gyp": "^10.0.0",
+    "rimraf": "^5.0.10",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
   },
   "gypfile": true,
   "os": [
