@@ -79,11 +79,20 @@ public:
     // Start capturing audio from a specific app
     bool startCapture(int processId, const CaptureConfig& config, std::function<void(const AudioSample&)> callback);
 
+    // Start capturing audio from multiple apps simultaneously
+    bool startCaptureMultiApp(const std::vector<int>& processIds, const CaptureConfig& config, std::function<void(const AudioSample&)> callback);
+
     // Start capturing audio from a specific window
     bool startCaptureForWindow(uint64_t windowId, const CaptureConfig& config, std::function<void(const AudioSample&)> callback);
 
+    // Start capturing audio from multiple windows simultaneously
+    bool startCaptureMultiWindow(const std::vector<uint64_t>& windowIds, const CaptureConfig& config, std::function<void(const AudioSample&)> callback);
+
     // Start capturing audio from a display
     bool startCaptureForDisplay(uint32_t displayId, const CaptureConfig& config, std::function<void(const AudioSample&)> callback);
+
+    // Start capturing audio from multiple displays simultaneously
+    bool startCaptureMultiDisplay(const std::vector<uint32_t>& displayIds, const CaptureConfig& config, std::function<void(const AudioSample&)> callback);
 
     // Stop capturing
     void stopCapture();

@@ -401,9 +401,33 @@ bool StartStreamWithFilter(WrapperImpl *wrapper, SCContentFilter *filter, const 
     return success;
 }
 
+// Static flag to ensure CoreGraphics is initialized once
+static bool cgsInitialized = false;
+static std::mutex cgsInitMutex;
+
+// Initialize CoreGraphics connection to window server
+// This must be called before any window/display enumeration
+void EnsureCGSInitialized() {
+    std::lock_guard<std::mutex> lock(cgsInitMutex);
+    if (cgsInitialized) return;
+    
+    // Force window server connection by calling CGMainDisplayID on main thread
+    if ([NSThread isMainThread]) {
+        CGMainDisplayID();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            CGMainDisplayID();
+        });
+    }
+    cgsInitialized = true;
+}
+
 } // namespace
 
 ScreenCaptureKitWrapper::ScreenCaptureKitWrapper() {
+    // Ensure CoreGraphics is initialized before any operations
+    EnsureCGSInitialized();
+    
     WrapperImpl *wrapper = new WrapperImpl();
     wrapper->objcImpl = [[ScreenCaptureKitImpl alloc] init];
     impl = wrapper;
@@ -587,6 +611,83 @@ bool ScreenCaptureKitWrapper::startCapture(int processId, const CaptureConfig& c
     return success;
 }
 
+bool ScreenCaptureKitWrapper::startCaptureMultiApp(const std::vector<int>& processIds, const CaptureConfig& config, std::function<void(const AudioSample&)> callback) {
+    if (!impl) return false;
+    if (processIds.empty()) return false;
+
+    WrapperImpl *wrapper = static_cast<WrapperImpl*>(impl);
+    std::lock_guard<std::mutex> lock(wrapper->mutex);
+
+    if (wrapper->objcImpl.isCapturing) {
+        return false; // Already capturing
+    }
+
+    wrapper->callback = callback;
+    __block bool success = false;
+    __block bool completed = false;
+    __block SCShareableContent *capturedContent = nil;
+
+    // macOS 26+ dispatches SCKit completion handlers to main queue.
+    // Call directly and pump run loop to process completions.
+    [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
+        if (error || !content) {
+            NSLog(@"Error getting shareable content: %@", error.localizedDescription);
+            completed = true;
+            return;
+        }
+        // Retain content to avoid macOS 26.2 ARC bug (FB21107737)
+        capturedContent = [content retain];
+        completed = true;
+    }];
+
+    RunLoopUntilComplete(&completed, 10.0);
+    
+    if (!capturedContent) {
+        return false;
+    }
+
+    // Find all applications with matching process IDs
+    NSMutableArray<SCRunningApplication *> *targetApps = [NSMutableArray array];
+    for (int processId : processIds) {
+        for (SCRunningApplication *app in capturedContent.applications) {
+            if (app.processID == processId) {
+                [targetApps addObject:app];
+                break;
+            }
+        }
+    }
+
+    if (targetApps.count == 0) {
+        NSLog(@"Could not find any applications with the specified process IDs");
+        [capturedContent release];
+        return false;
+    }
+
+    if (targetApps.count < processIds.size()) {
+        NSLog(@"Warning: Found %lu of %lu requested applications", (unsigned long)targetApps.count, (unsigned long)processIds.size());
+    }
+
+    SCContentFilter *filter = nil;
+    if (capturedContent.displays.count > 0) {
+        // Create exclude list: all apps EXCEPT the target apps
+        NSMutableArray *excludedApps = [NSMutableArray arrayWithArray:capturedContent.applications];
+        for (SCRunningApplication *targetApp in targetApps) {
+            [excludedApps removeObject:targetApp];
+        }
+        filter = [[SCContentFilter alloc] initWithDisplay:capturedContent.displays.firstObject
+                                     excludingApplications:excludedApps
+                                        exceptingWindows:@[]];
+    } else {
+        NSLog(@"No displays available for capture");
+        [capturedContent release];
+        return false;
+    }
+
+    success = StartStreamWithFilter(wrapper, filter, config);
+    [capturedContent release];
+    return success;
+}
+
 bool ScreenCaptureKitWrapper::startCaptureForWindow(uint64_t windowId, const CaptureConfig& config, std::function<void(const AudioSample&)> callback) {
     if (!impl) return false;
 
@@ -697,6 +798,145 @@ bool ScreenCaptureKitWrapper::startCaptureForDisplay(uint32_t displayId, const C
     }
 
     SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:targetDisplay
+                                                 excludingApplications:@[]
+                                                    exceptingWindows:@[]];
+
+    success = StartStreamWithFilter(wrapper, filter, config);
+    [capturedContent release];
+    return success;
+}
+
+bool ScreenCaptureKitWrapper::startCaptureMultiWindow(const std::vector<uint64_t>& windowIds, const CaptureConfig& config, std::function<void(const AudioSample&)> callback) {
+    if (!impl) return false;
+    if (windowIds.empty()) return false;
+
+    WrapperImpl *wrapper = static_cast<WrapperImpl*>(impl);
+    std::lock_guard<std::mutex> lock(wrapper->mutex);
+
+    if (wrapper->objcImpl.isCapturing) {
+        return false; // Already capturing
+    }
+
+    wrapper->callback = callback;
+    __block bool success = false;
+    __block bool completed = false;
+    __block SCShareableContent *capturedContent = nil;
+
+    [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
+        if (error || !content) {
+            NSLog(@"Error getting shareable content: %@", error.localizedDescription);
+            completed = true;
+            return;
+        }
+        capturedContent = [content retain];
+        completed = true;
+    }];
+
+    RunLoopUntilComplete(&completed, 10.0);
+    
+    if (!capturedContent) {
+        return false;
+    }
+
+    // Find all windows with matching IDs
+    NSMutableArray<SCWindow *> *targetWindows = [NSMutableArray array];
+    for (uint64_t windowId : windowIds) {
+        for (SCWindow *window in capturedContent.windows) {
+            if (window.windowID == windowId) {
+                [targetWindows addObject:window];
+                break;
+            }
+        }
+    }
+
+    if (targetWindows.count == 0) {
+        NSLog(@"Could not find any windows with the specified IDs");
+        [capturedContent release];
+        return false;
+    }
+
+    if (targetWindows.count < windowIds.size()) {
+        NSLog(@"Warning: Found %lu of %lu requested windows", (unsigned long)targetWindows.count, (unsigned long)windowIds.size());
+    }
+
+    // Create filter including only the target windows
+    // Use the first display as the base, then filter to only include these windows
+    SCContentFilter *filter = nil;
+    if (capturedContent.displays.count > 0) {
+        filter = [[SCContentFilter alloc] initWithDisplay:capturedContent.displays.firstObject
+                                                 includingWindows:targetWindows];
+    } else {
+        NSLog(@"No displays available for capture");
+        [capturedContent release];
+        return false;
+    }
+
+    success = StartStreamWithFilter(wrapper, filter, config);
+    [capturedContent release];
+    return success;
+}
+
+bool ScreenCaptureKitWrapper::startCaptureMultiDisplay(const std::vector<uint32_t>& displayIds, const CaptureConfig& config, std::function<void(const AudioSample&)> callback) {
+    if (!impl) return false;
+    if (displayIds.empty()) return false;
+
+    // Note: ScreenCaptureKit does not support capturing multiple displays in a single stream.
+    // For multi-display capture, we capture the first display and include all windows from all requested displays.
+    // This is a workaround - true multi-display would require multiple SCStream instances.
+
+    WrapperImpl *wrapper = static_cast<WrapperImpl*>(impl);
+    std::lock_guard<std::mutex> lock(wrapper->mutex);
+
+    if (wrapper->objcImpl.isCapturing) {
+        return false; // Already capturing
+    }
+
+    wrapper->callback = callback;
+    __block bool success = false;
+    __block bool completed = false;
+    __block SCShareableContent *capturedContent = nil;
+
+    [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
+        if (error || !content) {
+            NSLog(@"Error getting shareable content: %@", error.localizedDescription);
+            completed = true;
+            return;
+        }
+        capturedContent = [content retain];
+        completed = true;
+    }];
+
+    RunLoopUntilComplete(&completed, 10.0);
+    
+    if (!capturedContent) {
+        return false;
+    }
+
+    // Find all displays with matching IDs
+    NSMutableArray<SCDisplay *> *targetDisplays = [NSMutableArray array];
+    for (uint32_t displayId : displayIds) {
+        for (SCDisplay *display in capturedContent.displays) {
+            if (display.displayID == displayId) {
+                [targetDisplays addObject:display];
+                break;
+            }
+        }
+    }
+
+    if (targetDisplays.count == 0) {
+        NSLog(@"Could not find any displays with the specified IDs");
+        [capturedContent release];
+        return false;
+    }
+
+    if (targetDisplays.count < displayIds.size()) {
+        NSLog(@"Warning: Found %lu of %lu requested displays", (unsigned long)targetDisplays.count, (unsigned long)displayIds.size());
+    }
+
+    // For multi-display, we use the first display as the primary and exclude nothing
+    // This effectively captures audio from all apps on all displays
+    // Note: True multi-display video capture would need different approach
+    SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:targetDisplays.firstObject
                                                  excludingApplications:@[]
                                                     exceptingWindows:@[]];
 

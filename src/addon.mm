@@ -34,8 +34,11 @@ private:
     Napi::Value GetAvailableWindows(const Napi::CallbackInfo& info);
     Napi::Value GetAvailableDisplays(const Napi::CallbackInfo& info);
     Napi::Value StartCapture(const Napi::CallbackInfo& info);
+    Napi::Value StartCaptureMultiApp(const Napi::CallbackInfo& info);
     Napi::Value StartCaptureForWindow(const Napi::CallbackInfo& info);
+    Napi::Value StartCaptureMultiWindow(const Napi::CallbackInfo& info);
     Napi::Value StartCaptureForDisplay(const Napi::CallbackInfo& info);
+    Napi::Value StartCaptureMultiDisplay(const Napi::CallbackInfo& info);
     Napi::Value StopCapture(const Napi::CallbackInfo& info);
     Napi::Value IsCapturing(const Napi::CallbackInfo& info);
 
@@ -55,8 +58,11 @@ Napi::Object ScreenCaptureAddon::Init(Napi::Env env, Napi::Object exports) {
         InstanceMethod("getAvailableWindows", &ScreenCaptureAddon::GetAvailableWindows),
         InstanceMethod("getAvailableDisplays", &ScreenCaptureAddon::GetAvailableDisplays),
         InstanceMethod("startCapture", &ScreenCaptureAddon::StartCapture),
+        InstanceMethod("startCaptureMultiApp", &ScreenCaptureAddon::StartCaptureMultiApp),
         InstanceMethod("startCaptureForWindow", &ScreenCaptureAddon::StartCaptureForWindow),
+        InstanceMethod("startCaptureMultiWindow", &ScreenCaptureAddon::StartCaptureMultiWindow),
         InstanceMethod("startCaptureForDisplay", &ScreenCaptureAddon::StartCaptureForDisplay),
+        InstanceMethod("startCaptureMultiDisplay", &ScreenCaptureAddon::StartCaptureMultiDisplay),
         InstanceMethod("stopCapture", &ScreenCaptureAddon::StopCapture),
         InstanceMethod("isCapturing", &ScreenCaptureAddon::IsCapturing),
     });
@@ -298,6 +304,44 @@ Napi::Value ScreenCaptureAddon::StartCapture(const Napi::CallbackInfo& info) {
     return StartCaptureWithConfig(info, starter);
 }
 
+Napi::Value ScreenCaptureAddon::StartCaptureMultiApp(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 3) {
+        Napi::TypeError::New(env, "Expected 3 arguments: processIds array, config, and callback").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    if (!info[0].IsArray()) {
+        Napi::TypeError::New(env, "First argument must be an array of process IDs").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    Napi::Array processIdsArray = info[0].As<Napi::Array>();
+    std::vector<int> processIds;
+    processIds.reserve(processIdsArray.Length());
+
+    for (uint32_t i = 0; i < processIdsArray.Length(); i++) {
+        Napi::Value val = processIdsArray.Get(i);
+        if (!val.IsNumber()) {
+            Napi::TypeError::New(env, "All elements in processIds array must be numbers").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        processIds.push_back(val.As<Napi::Number>().Int32Value());
+    }
+
+    if (processIds.empty()) {
+        Napi::TypeError::New(env, "processIds array must not be empty").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    auto starter = [this, processIds](const CaptureConfig& config, const std::function<void(const AudioSample&)>& cb) {
+        return wrapper_->startCaptureMultiApp(processIds, config, cb);
+    };
+
+    return StartCaptureWithConfig(info, starter);
+}
+
 Napi::Value ScreenCaptureAddon::StartCaptureForWindow(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
 
@@ -319,6 +363,44 @@ Napi::Value ScreenCaptureAddon::StartCaptureForWindow(const Napi::CallbackInfo& 
     return StartCaptureWithConfig(info, starter);
 }
 
+Napi::Value ScreenCaptureAddon::StartCaptureMultiWindow(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 3) {
+        Napi::TypeError::New(env, "Expected 3 arguments: windowIds array, config, and callback").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    if (!info[0].IsArray()) {
+        Napi::TypeError::New(env, "First argument must be an array of window IDs").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    Napi::Array windowIdsArray = info[0].As<Napi::Array>();
+    std::vector<uint64_t> windowIds;
+    windowIds.reserve(windowIdsArray.Length());
+
+    for (uint32_t i = 0; i < windowIdsArray.Length(); i++) {
+        Napi::Value val = windowIdsArray.Get(i);
+        if (!val.IsNumber()) {
+            Napi::TypeError::New(env, "All elements in windowIds array must be numbers").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        windowIds.push_back(static_cast<uint64_t>(val.As<Napi::Number>().Int64Value()));
+    }
+
+    if (windowIds.empty()) {
+        Napi::TypeError::New(env, "windowIds array must not be empty").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    auto starter = [this, windowIds](const CaptureConfig& config, const std::function<void(const AudioSample&)>& cb) {
+        return wrapper_->startCaptureMultiWindow(windowIds, config, cb);
+    };
+
+    return StartCaptureWithConfig(info, starter);
+}
+
 Napi::Value ScreenCaptureAddon::StartCaptureForDisplay(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
 
@@ -335,6 +417,44 @@ Napi::Value ScreenCaptureAddon::StartCaptureForDisplay(const Napi::CallbackInfo&
     uint32_t displayId = info[0].As<Napi::Number>().Uint32Value();
     auto starter = [this, displayId](const CaptureConfig& config, const std::function<void(const AudioSample&)>& cb) {
         return wrapper_->startCaptureForDisplay(displayId, config, cb);
+    };
+
+    return StartCaptureWithConfig(info, starter);
+}
+
+Napi::Value ScreenCaptureAddon::StartCaptureMultiDisplay(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 3) {
+        Napi::TypeError::New(env, "Expected 3 arguments: displayIds array, config, and callback").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    if (!info[0].IsArray()) {
+        Napi::TypeError::New(env, "First argument must be an array of display IDs").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    Napi::Array displayIdsArray = info[0].As<Napi::Array>();
+    std::vector<uint32_t> displayIds;
+    displayIds.reserve(displayIdsArray.Length());
+
+    for (uint32_t i = 0; i < displayIdsArray.Length(); i++) {
+        Napi::Value val = displayIdsArray.Get(i);
+        if (!val.IsNumber()) {
+            Napi::TypeError::New(env, "All elements in displayIds array must be numbers").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        displayIds.push_back(val.As<Napi::Number>().Uint32Value());
+    }
+
+    if (displayIds.empty()) {
+        Napi::TypeError::New(env, "displayIds array must not be empty").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    auto starter = [this, displayIds](const CaptureConfig& config, const std::function<void(const AudioSample&)>& cb) {
+        return wrapper_->startCaptureMultiDisplay(displayIds, config, cb);
     };
 
     return StartCaptureWithConfig(info, starter);
