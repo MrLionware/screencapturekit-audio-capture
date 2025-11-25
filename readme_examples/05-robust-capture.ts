@@ -47,7 +47,8 @@ class RobustAudioCapture {
                         console.log(`Requested app not found. Fallback to: ${audioApps[0].applicationName}`);
                         this.capture.startCapture(audioApps[0].applicationName);
                     } else {
-                        throw new Error(`App not found. Available: ${err.details?.availableApps?.join(', ')}`);
+                        const available = err.details?.availableApps as string[] | undefined;
+                        throw new Error(`App not found. Available: ${available?.join(', ')}`);
                     }
                 }
             } else {

@@ -5,8 +5,9 @@ const capture = new AudioCapture();
 const LOUD_THRESHOLD = -20; // dB
 const QUIET_THRESHOLD = -40; // dB
 
-// Find app
-const app = capture.selectApp(undefined, { fallbackToFirst: true });
+// Find app - use TARGET_APP env var if set
+const appList = process.env.TARGET_APP ? [process.env.TARGET_APP] : undefined;
+const app = capture.selectApp(appList, { fallbackToFirst: true });
 if (!app) {
     console.log('No app found.');
     process.exit(0);
@@ -39,7 +40,8 @@ setTimeout(() => {
 function runSmartDetection() {
     console.log('\n--- Smart Audio Detection (Min Volume) ---');
     const capture2 = new AudioCapture();
-    const app2 = capture2.selectApp(undefined, { fallbackToFirst: true });
+    const appList2 = process.env.TARGET_APP ? [process.env.TARGET_APP] : undefined;
+    const app2 = capture2.selectApp(appList2, { fallbackToFirst: true });
 
     if (!app2) return;
 

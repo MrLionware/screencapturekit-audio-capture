@@ -16,8 +16,9 @@ const yourSTTWritableStream = new Writable({
 });
 
 // One-line STT stream with auto-conversion to Int16 mono
-// We'll try to find a common browser or app, or just let it auto-select
-const sttStream: STTConverter = capture.createSTTStream(['Safari', 'Chrome', 'Zoom', 'Music', 'Spotify'], {
+// Use TARGET_APP env var if set, otherwise try common apps
+const appList = process.env.TARGET_APP ? [process.env.TARGET_APP] : ['Safari', 'Chrome', 'Zoom', 'Music', 'Spotify'];
+const sttStream: STTConverter = capture.createSTTStream(appList, {
     minVolume: 0.01      // Filter silence
 });
 
@@ -62,7 +63,8 @@ function runEventBasedApproach() {
     }
 
     // Smart app selection with fallback
-    const app: ApplicationInfo | null = capture2.selectApp(['Safari', 'Chrome', 'Zoom', 'Music', 'Spotify'], { fallbackToFirst: true });
+    const appList2 = process.env.TARGET_APP ? [process.env.TARGET_APP] : ['Safari', 'Chrome', 'Zoom', 'Music', 'Spotify'];
+    const app: ApplicationInfo | null = capture2.selectApp(appList2, { fallbackToFirst: true });
     if (!app) {
         console.error('No suitable app found');
         return;

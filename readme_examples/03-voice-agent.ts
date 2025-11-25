@@ -21,7 +21,8 @@ const yourResponseGenerator = new Writable({
 });
 
 // Find an app to capture
-const app = capture.selectApp(['Zoom', 'Slack', 'Discord', 'Music', 'Spotify'], { fallbackToFirst: true });
+const appList = process.env.TARGET_APP ? [process.env.TARGET_APP] : ['Zoom', 'Slack', 'Discord', 'Music', 'Spotify'];
+const app = capture.selectApp(appList, { fallbackToFirst: true });
 
 if (!app) {
     console.log('No suitable app found for Voice Agent example.');

@@ -9,7 +9,7 @@ class VolumeAnalyzer extends Transform {
         super({ objectMode: true });
     }
 
-    _transform(sample: AudioSample, encoding: BufferEncoding, callback: TransformCallback) {
+    override _transform(sample: AudioSample, encoding: BufferEncoding, callback: TransformCallback) {
         const db = AudioCapture.rmsToDb(sample.rms);
         console.log(`Volume: ${db.toFixed(1)} dB`);
 
@@ -19,8 +19,9 @@ class VolumeAnalyzer extends Transform {
     }
 }
 
-// Find app
-const app = capture.selectApp(undefined, { fallbackToFirst: true });
+// Find app - use TARGET_APP env var if set
+const appList = process.env.TARGET_APP ? [process.env.TARGET_APP] : undefined;
+const app = capture.selectApp(appList, { fallbackToFirst: true });
 if (!app) {
     console.log('No app found.');
     process.exit(0);

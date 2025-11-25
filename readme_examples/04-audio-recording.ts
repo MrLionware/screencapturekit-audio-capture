@@ -6,7 +6,8 @@ const capture = new AudioCapture();
 const chunks: Buffer[] = [];
 
 // Find an app
-const app = capture.selectApp(['Music', 'Spotify', 'YouTube', 'Safari'], { fallbackToFirst: true });
+const appList = process.env.TARGET_APP ? [process.env.TARGET_APP] : ['Music', 'Spotify', 'YouTube', 'Safari'];
+const app = capture.selectApp(appList, { fallbackToFirst: true });
 
 if (!app) {
     console.log('No app found for recording.');

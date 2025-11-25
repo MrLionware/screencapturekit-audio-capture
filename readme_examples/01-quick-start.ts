@@ -9,9 +9,12 @@ apps.forEach((app) => {
     console.log(`  Bundle ID: ${app.bundleIdentifier}`);
 });
 
-// Start capturing from Spotify (or first available audio app if not found)
+// Start capturing from TARGET_APP env var, or Spotify, or first available audio app
 const audioApps = capture.getAudioApps();
-const targetApp = audioApps.find(a => a.applicationName === 'Spotify') || audioApps[0];
+const targetAppName = process.env.TARGET_APP;
+const targetApp = targetAppName 
+    ? audioApps.find(a => a.applicationName === targetAppName) || audioApps[0]
+    : audioApps.find(a => a.applicationName === 'Spotify') || audioApps[0];
 
 if (!targetApp) {
     console.log('No audio apps found to capture from.');

@@ -5,8 +5,9 @@ import path from 'path';
 
 const capture = new AudioCapture();
 
-// Find an app
-const app = capture.selectApp(['Spotify', 'Music', 'Chrome'], { fallbackToFirst: true });
+// Find an app - use TARGET_APP env var if set
+const appList = process.env.TARGET_APP ? [process.env.TARGET_APP] : ['Spotify', 'Music', 'Chrome'];
+const app = capture.selectApp(appList, { fallbackToFirst: true });
 if (!app) {
     console.log('No app found for stream basics.');
     process.exit(0);
@@ -39,7 +40,8 @@ setTimeout(() => {
 function runObjectModeExample() {
     console.log('\n--- Object Mode Example ---');
     const capture2 = new AudioCapture();
-    const app2 = capture2.selectApp(undefined, { fallbackToFirst: true });
+    const appList2 = process.env.TARGET_APP ? [process.env.TARGET_APP] : undefined;
+    const app2 = capture2.selectApp(appList2, { fallbackToFirst: true });
 
     if (!app2) return;
 

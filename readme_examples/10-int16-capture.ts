@@ -2,8 +2,9 @@ import { AudioCapture, type AudioSample } from '../src/index';
 
 const capture = new AudioCapture();
 
-// Find app
-const app = capture.selectApp(undefined, { fallbackToFirst: true });
+// Find app - use TARGET_APP env var if set
+const appList = process.env.TARGET_APP ? [process.env.TARGET_APP] : undefined;
+const app = capture.selectApp(appList, { fallbackToFirst: true });
 if (!app) {
     console.log('No app found.');
     process.exit(0);
