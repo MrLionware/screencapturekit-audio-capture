@@ -82,7 +82,7 @@ export interface NativeAudioSample {
 /**
  * Capture target type
  */
-export type CaptureTargetType = 'application' | 'window' | 'display';
+export type CaptureTargetType = 'application' | 'window' | 'display' | 'multi-app';
 
 /**
  * Capture target information
@@ -91,6 +91,7 @@ export interface CaptureInfo {
   readonly targetType: CaptureTargetType;
   readonly processId: number | null;
   readonly app: ApplicationInfo | null;
+  readonly apps?: readonly ApplicationInfo[];
   readonly window: WindowInfo | null;
   readonly display: DisplayInfo | null;
 }
@@ -356,11 +357,60 @@ export interface CaptureTarget {
   readonly type: CaptureTargetType;
   readonly processId: number | null;
   readonly app: ApplicationInfo | null;
+  readonly apps?: readonly ApplicationInfo[];
   readonly window: WindowInfo | null;
   readonly display: DisplayInfo | null;
   readonly failureMessage: string;
   readonly failureDetails: Record<string, unknown>;
 }
+
+/**
+ * Options for captureMultipleApps
+ */
+export interface MultiAppCaptureOptions extends CaptureOptions {
+  /**
+   * If true, start capture even if some apps are not found
+   * @default true
+   */
+  readonly allowPartial?: boolean;
+}
+
+/**
+ * Multi-app identifier - accepts app names, bundle IDs, PIDs, or ApplicationInfo objects
+ */
+export type MultiAppIdentifier = (string | number | ApplicationInfo)[];
+
+/**
+ * Options for captureMultipleWindows
+ */
+export interface MultiWindowCaptureOptions extends CaptureOptions {
+  /**
+   * If true, start capture even if some windows are not found
+   * @default true
+   */
+  readonly allowPartial?: boolean;
+}
+
+/**
+ * Multi-window identifier - accepts window IDs or WindowInfo objects
+ */
+export type MultiWindowIdentifier = (number | WindowInfo)[];
+
+/**
+ * Options for captureMultipleDisplays
+ */
+export interface MultiDisplayCaptureOptions extends CaptureOptions {
+  /**
+   * If true, start capture even if some displays are not found
+   * @default true
+   */
+  readonly allowPartial?: boolean;
+}
+
+/**
+ * Multi-display identifier - accepts display IDs or DisplayInfo objects
+ */
+export type MultiDisplayIdentifier = (number | DisplayInfo)[];
 
 /**
  * Native capture starter function type
