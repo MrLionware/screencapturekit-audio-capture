@@ -11,6 +11,9 @@ npm run test:unit
 npm run test:integration
 npm run test:edge-cases
 
+# Run README examples integration tests (requires audio source)
+npm run test:readme
+
 # Type-check tests without running
 npm run test:typecheck
 
@@ -104,9 +107,9 @@ tests/
 
 ### 1. Separation of Concerns
 - **Unit tests** test individual functions/classes in isolation
-- **Integration tests** test how components work together
-- **Example tests** validate that documentation examples work
+- **Integration tests** test how components work together  
 - **Edge case tests** cover boundary conditions and error scenarios
+- **README examples** validate documentation examples work (see `readme_examples/`)
 
 ### 2. Modular Design
 - Each test file focuses on ONE feature or component
@@ -545,8 +548,8 @@ The framework easily integrates with:
 **Where should I add my test?**
 - Testing a single function? → `unit/`
 - Testing multiple components? → `integration/`
-- Testing an example? → `examples/`
 - Testing edge cases? → `edge-cases/`
+- Testing README examples? → `readme_examples/` (run with `npm run test:readme`)
 
 **How do I run just my tests?**
 ```bash

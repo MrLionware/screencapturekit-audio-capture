@@ -14,7 +14,7 @@ import type { AudioCapture } from '../../dist/audio-capture';
 import type { AudioStream } from '../../dist/audio-stream';
 import type { STTConverter } from '../../dist/stt-converter';
 import type { AudioCaptureError, ErrorCode } from '../../dist/errors';
-import type { MockScreenCaptureKit } from '../fixtures/mock-native';
+import type { MockScreenCaptureKit, NativeScreenCaptureKitClass } from '../fixtures/mock-native';
 
 /**
  * SDK exports interface
@@ -704,7 +704,7 @@ export function createAudioCaptureMock(options: CreateAudioCaptureMockOptions = 
  * Options for loading SDK with mock
  */
 export interface LoadSDKWithMockOptions {
-  nativeMock?: { ScreenCaptureKit: typeof MockScreenCaptureKit };
+  nativeMock?: { ScreenCaptureKit: NativeScreenCaptureKitClass };
 }
 
 /**

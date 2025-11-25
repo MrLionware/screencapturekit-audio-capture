@@ -289,7 +289,7 @@ test('AudioStream', async (t) => {
 
       if (activeCallback) {
         const buffer = Buffer.alloc(1024);
-        activeCallback({
+        (activeCallback as unknown as (sample: NativeAudioSample) => void)({
           data: buffer,
           sampleRate: 48000,
           channelCount: 2,
@@ -442,6 +442,171 @@ test('AudioStream', async (t) => {
           }
         }, 10);
       });
+    });
+  });
+
+  await t.test('AudioStream Edge Cases', async (t) => {
+    await t.test('should handle double stop() calls gracefully', () => {
+      let stopCalled = 0;
+
+      const mockNative = {
+        ScreenCaptureKit: class {
+          getAvailableApps() {
+            return MOCK_APPS;
+          }
+          startCapture(_pid: number, _config: NativeCaptureConfig, _callback: (sample: NativeAudioSample) => void): boolean {
+            return true;
+          }
+          stopCapture(): void {
+            stopCalled++;
+          }
+          isCapturing(): boolean {
+            return stopCalled === 0;
+          }
+        }
+      };
+
+      const { AudioCapture, AudioStream } = loadSDKWithMock({ nativeMock: mockNative });
+
+      return new Promise<void>((resolve, reject) => {
+        const capture = new AudioCapture();
+        const stream = new AudioStream(capture, 'Example App');
+
+        stream.resume();
+
+        setTimeout(() => {
+          try {
+            // First stop
+            stream.stop();
+            assert.equal(stopCalled, 1);
+
+            // Second stop should be no-op
+            stream.stop();
+            assert.equal(stopCalled, 1, 'Second stop() should not call stopCapture again');
+
+            resolve();
+          } catch (err) {
+            reject(err as Error);
+          }
+        }, 10);
+      });
+    });
+
+    await t.test('should handle startCapture failure gracefully', () => {
+      const mockNative = {
+        ScreenCaptureKit: class {
+          getAvailableApps() {
+            return MOCK_APPS;
+          }
+          startCapture(_pid: number, _config: NativeCaptureConfig, _callback: (sample: NativeAudioSample) => void): boolean {
+            return false; // Simulate failure
+          }
+          stopCapture(): void { }
+          isCapturing(): boolean {
+            return false;
+          }
+        }
+      };
+
+      const { AudioCapture, AudioStream } = loadSDKWithMock({ nativeMock: mockNative });
+
+      return new Promise<void>((resolve, reject) => {
+        const capture = new AudioCapture();
+        const stream = new AudioStream(capture, 'Example App');
+
+        // Handle expected error
+        stream.on('error', (err) => {
+          try {
+            assert.ok(err, 'Should emit error when startCapture fails');
+            resolve();
+          } catch (e) {
+            reject(e as Error);
+          }
+        });
+
+        // Start flowing - this should trigger startCapture which will fail
+        stream.resume();
+      });
+    });
+
+    await t.test('should ignore audio events after stop()', () => {
+      const mockNative = {
+        ScreenCaptureKit: class {
+          getAvailableApps() {
+            return MOCK_APPS;
+          }
+          startCapture(_pid: number, _config: NativeCaptureConfig, _callback: (sample: NativeAudioSample) => void): boolean {
+            return true;
+          }
+          stopCapture(): void { }
+          isCapturing(): boolean {
+            return true;
+          }
+        }
+      };
+
+      const { AudioCapture, AudioStream } = loadSDKWithMock({ nativeMock: mockNative });
+
+      return new Promise<void>((resolve, reject) => {
+        const capture = new AudioCapture();
+        const stream = new AudioStream(capture, 'Example App');
+
+        let dataCount = 0;
+        stream.on('data', () => {
+          dataCount++;
+        });
+
+        stream.resume();
+
+        setTimeout(() => {
+          try {
+            // Emit some audio
+            capture.emit('audio', { data: Buffer.alloc(10) });
+            assert.equal(dataCount, 1);
+
+            // Stop the stream
+            stream.stop();
+
+            // Emit more audio - should be ignored
+            capture.emit('audio', { data: Buffer.alloc(10) });
+            assert.equal(dataCount, 1, 'Audio events after stop() should be ignored');
+
+            resolve();
+          } catch (err) {
+            reject(err as Error);
+          }
+        }, 10);
+      });
+    });
+
+    await t.test('should end stream when external stop event received', (t: TestContext, done: () => void) => {
+      let activeCallback: ((sample: NativeAudioSample) => void) | null = null;
+
+      const mockNative = {
+        ScreenCaptureKit: class extends MockScreenCaptureKit {
+          override getAvailableApps() {
+            return MOCK_APPS;
+          }
+          override startCapture(pid: number, config: NativeCaptureConfig, callback: (sample: NativeAudioSample) => void): boolean {
+            activeCallback = callback;
+            return super.startCapture(pid, config, callback);
+          }
+        }
+      };
+
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+      const stream = capture.createAudioStream(100);
+
+      stream.on('data', () => { });
+      stream.on('end', () => {
+        done();
+      });
+
+      // Wait for stream to start, then trigger external stop
+      setTimeout(() => {
+        capture.emit('stop', { processId: 100 });
+      }, 10);
     });
   });
 });

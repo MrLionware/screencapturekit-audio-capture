@@ -145,7 +145,7 @@ export function createInt16Buffer(length: number = 1024, value: number = 16384):
 /**
  * Audio pattern types
  */
-export type AudioPattern = 'sine' | 'silence' | 'noise' | 'extreme' | 'nan';
+export type AudioPattern = 'sine' | 'silence' | 'noise' | 'extreme' | 'nan' | 'constant';
 
 /**
  * Create a buffer with specific audio pattern
@@ -172,6 +172,9 @@ export function createAudioPattern(pattern: AudioPattern, length: number = 1024)
       break;
     case 'nan':
       floatData.fill(NaN);
+      break;
+    case 'constant':
+      floatData.fill(0.5);
       break;
     default:
       floatData.fill(0.5);

@@ -7,7 +7,7 @@
 
 import type { EventEmitter } from 'node:events';
 import { loadSDKWithMock, type SDKExports } from './test-utils';
-import { createNativeMock, type CreateNativeMockOptions, type MockScreenCaptureKit } from '../fixtures/mock-native';
+import { createNativeMock, type CreateNativeMockOptions, type MockScreenCaptureKit, type NativeScreenCaptureKitClass } from '../fixtures/mock-native';
 import type { AudioCapture } from '../../dist/audio-capture';
 import type { AppIdentifier, AudioStreamOptions } from '../../dist/types';
 
@@ -19,7 +19,7 @@ import type { AppIdentifier, AudioStreamOptions } from '../../dist/types';
  * const capture = new AudioCapture();
  */
 export function createTestContext(
-  nativeMock: { ScreenCaptureKit: typeof MockScreenCaptureKit } | null = null,
+  nativeMock: { ScreenCaptureKit: NativeScreenCaptureKitClass } | null = null,
   options: CreateNativeMockOptions = {}
 ): SDKExports {
   const mock = nativeMock || createNativeMock(options);

@@ -59,7 +59,7 @@ test('Capture Control', async (t) => {
       const success = capture.startCapture('Music Player');
       assert.equal(success, true);
       assert.equal(capture.isCapturing(), true);
-      assert.equal(startCaptureCalledWith?.pid, 200);
+      assert.equal((startCaptureCalledWith as { pid: number; config: NativeCaptureConfig } | null)?.pid, 200);
       assert.equal(typeof capturedCallback, 'function');
 
       capture.stopCapture();
@@ -90,7 +90,7 @@ test('Capture Control', async (t) => {
 
       assert.equal(success, true);
       assert.equal(capture.isCapturing(), true);
-      assert.equal(startCaptureCalledWith?.pid, 200, 'Should use processId from app object');
+      assert.equal((startCaptureCalledWith as { pid: number; config: NativeCaptureConfig } | null)?.pid, 200, 'Should use processId from app object');
 
       capture.stopCapture();
     });
@@ -230,7 +230,7 @@ test('Capture Control', async (t) => {
       });
 
       // Simulate native callback
-      capturedCallback?.(mockSample);
+      (capturedCallback as unknown as (sample: NativeAudioSample) => void)(mockSample);
     });
 
     await t.test('should filter audio below volume threshold', () => {
@@ -267,12 +267,14 @@ test('Capture Control', async (t) => {
       floatData.fill(0.1);
       const buffer = Buffer.from(floatData.buffer);
 
-      capturedCallback?.({
-        data: buffer,
-        sampleRate: 48000,
-        channelCount: 2,
-        timestamp: 100
-      });
+      if (capturedCallback) {
+        (capturedCallback as (sample: NativeAudioSample) => void)({
+          data: buffer,
+          sampleRate: 48000,
+          channelCount: 2,
+          timestamp: 100
+        });
+      }
 
       assert.equal(audioEmitted, false, 'Should not emit audio below threshold');
 

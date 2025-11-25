@@ -240,8 +240,8 @@ test('Real-world Window and Display Scenarios', async (t) => {
   const baseMock = createNativeMock({ apps: MOCK_APPS, windows: MOCK_WINDOWS, displays: MOCK_DISPLAYS });
   const mockNative = {
     ScreenCaptureKit: class extends baseMock.ScreenCaptureKit {
-      private _capturing = false;
-      private _activeCallback: ((sample: any) => void) | null = null;
+      protected override _capturing = false;
+      protected override _activeCallback: ((sample: any) => void) | null = null;
 
       constructor() {
         super();
@@ -297,7 +297,7 @@ test('Real-world Window and Display Scenarios', async (t) => {
       }
 
       // Helper to simulate audio callback
-      simulateAudio(): void {
+      override simulateAudio(): void {
         if (this._activeCallback) {
           const floatData = new Float32Array(1024);
           floatData.fill(0.5);

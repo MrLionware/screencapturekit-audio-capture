@@ -358,4 +358,61 @@ test('Application Selection', async (t) => {
       assert.equal(app, null);
     });
   });
+
+  await t.test('findByName()', async (t) => {
+    await t.test('should be an alias for findApplication', () => {
+      const mockNative = createNativeMock({ apps: MOCK_APPS });
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      // findByName should return same result as findApplication
+      const appByName = capture.findByName('Music Player');
+      const appByFind = capture.findApplication('Music Player');
+
+      assert.deepEqual(appByName, appByFind);
+    });
+
+    await t.test('should find app by partial name', () => {
+      const mockNative = createNativeMock({ apps: MOCK_APPS });
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      const app = capture.findByName('music');
+      assert.ok(app);
+      assert.equal(app!.applicationName, 'Music Player');
+    });
+
+    await t.test('should return null for non-existent app', () => {
+      const mockNative = createNativeMock({ apps: MOCK_APPS });
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      const app = capture.findByName('NonExistent');
+      assert.equal(app, null);
+    });
+  });
+
+  await t.test('selectApp() with sortByActivity', async (t) => {
+    await t.test('should sort apps by recent activity when enabled', () => {
+      const mockNative = createNativeMock({ apps: MOCK_APPS });
+      const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+      const capture = new AudioCapture();
+
+      capture.enableActivityTracking();
+
+      // Add activity data - Music Player (200) more recent than Example App (100)
+      const now = Date.now();
+      (capture as any)._audioActivityCache.set(100, { lastSeen: now - 10000, avgRMS: 0.5, sampleCount: 10 });
+      (capture as any)._audioActivityCache.set(200, { lastSeen: now - 100, avgRMS: 0.7, sampleCount: 20 });
+
+      // Without sortByActivity - should get first matching app
+      const appNoSort = capture.selectApp(null, { sortByActivity: false });
+      assert.ok(appNoSort);
+
+      // With sortByActivity - most recent should be returned first
+      const appWithSort = capture.selectApp(null, { sortByActivity: true });
+      assert.ok(appWithSort);
+      assert.equal(appWithSort!.processId, 200, 'Most recently active app should be first');
+    });
+  });
 });

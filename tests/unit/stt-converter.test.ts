@@ -183,6 +183,55 @@ test('STTConverter', async (t) => {
       });
     });
   });
+
+  await t.test('Float32 Passthrough', async (t) => {
+    await t.test('should passthrough float32 without conversion', (t: TestContext, done: () => void) => {
+      const { STTConverter } = loadSDKWithMock();
+      const converter = new STTConverter({
+        format: 'float32',
+        channels: 2 // Keep stereo
+      });
+
+      // Create Float32 stereo input
+      const floatData = new Float32Array([0.5, -0.5, 0.25, -0.25]);
+      const inputBuffer = Buffer.from(floatData.buffer);
+
+      converter.on('data', (chunk: Buffer) => {
+        // Should remain float32 stereo - no conversion
+        assert.equal(chunk.length, inputBuffer.length);
+
+        const outputData = new Float32Array(chunk.buffer, chunk.byteOffset, chunk.length / 4);
+        assert.equal(outputData.length, 4);
+        assert.equal(outputData[0], 0.5);
+        assert.equal(outputData[1], -0.5);
+        done();
+      });
+
+      converter.write(inputBuffer);
+    });
+
+    await t.test('should downmix stereo to mono while keeping float32', (t: TestContext, done: () => void) => {
+      const { STTConverter } = loadSDKWithMock();
+      const converter = new STTConverter({
+        format: 'float32',
+        channels: 1 // Convert to mono
+      });
+
+      // Create Float32 stereo input (L=1.0, R=0.0)
+      const floatData = new Float32Array([1.0, 0.0]);
+      const inputBuffer = Buffer.from(floatData.buffer);
+
+      converter.on('data', (chunk: Buffer) => {
+        // Should be mono float32
+        const outputData = new Float32Array(chunk.buffer, chunk.byteOffset, chunk.length / 4);
+        assert.equal(outputData.length, 1);
+        assert.equal(outputData[0], 0.5); // Average of 1.0 and 0.0
+        done();
+      });
+
+      converter.write(inputBuffer);
+    });
+  });
 });
 
 test('createSTTStream', async (t) => {
@@ -202,7 +251,7 @@ test('createSTTStream', async (t) => {
 
   await t.test('should create pipeline with auto-selected app', () => {
     const capture = new AudioCapture();
-    const sttStream = capture.createSTTStream(null, {
+    const sttStream = capture.createSTTStream(null as unknown as string, {
       autoSelect: true
     });
     assert.ok(sttStream instanceof STTConverter);
@@ -297,7 +346,7 @@ test('createSTTStream', async (t) => {
     assert.equal(converted.channels, 1);
     assert.ok(converted.data instanceof Buffer);
 
-    sttStream.stop();
+    sttStream.stop!();
     assert.equal(mockStream.stopped, true);
   });
 });

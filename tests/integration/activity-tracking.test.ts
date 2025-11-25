@@ -43,7 +43,7 @@ test('Activity Tracking', async (t) => {
     }
   };
 
-  const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative });
+  const { AudioCapture } = loadSDKWithMock({ nativeMock: mockNative }) as { AudioCapture: any };
 
   await t.test('should enable tracking', () => {
     const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & {
@@ -129,9 +129,7 @@ test('Activity Tracking', async (t) => {
   });
 
   await t.test('should sort by recent activity', (t: TestContext, done: () => void) => {
-    const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & {
-      _audioActivityCache: Map<number, ActivityCacheEntry>;
-    };
+    const capture = new AudioCapture() as any;
     capture.enableActivityTracking();
 
     // Manually add activity for different apps
@@ -157,9 +155,7 @@ test('Activity Tracking', async (t) => {
   });
 
   await t.test('should handle apps without activity', (t: TestContext, done: () => void) => {
-    const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & {
-      _audioActivityCache: Map<number, ActivityCacheEntry>;
-    };
+    const capture = new AudioCapture() as any;
     capture.enableActivityTracking();
 
     // Add activity for only one app
@@ -179,9 +175,7 @@ test('Activity Tracking', async (t) => {
   });
 
   await t.test('should not affect performance when disabled', (t: TestContext, done: () => void) => {
-    const capture = new AudioCapture() as InstanceType<typeof AudioCapture> & {
-      _audioActivityCache: Map<number, ActivityCacheEntry>;
-    };
+    const capture = new AudioCapture() as any;
     capture.disableActivityTracking();
     capture.startCapture('Music Player');
 
@@ -202,5 +196,66 @@ test('Activity Tracking', async (t) => {
       channelCount: 2,
       timestamp: 123
     });
+  });
+
+  await t.test('should remove stale entries during sortByActivity', (t: TestContext, done: () => void) => {
+    const capture = new AudioCapture() as any;
+    capture.enableActivityTracking({ decayMs: 1000 }); // Short decay for testing
+
+    // Add stale activity (older than decay threshold)
+    const now = Date.now();
+    capture._audioActivityCache.set(100, {
+      lastSeen: now - 5000, // 5 seconds ago, older than 1s decay
+      avgRMS: 0.5,
+      sampleCount: 10
+    });
+    capture._audioActivityCache.set(200, {
+      lastSeen: now - 500, // 0.5 seconds ago, within decay
+      avgRMS: 0.7,
+      sampleCount: 20
+    });
+
+    // This should trigger cleanup of stale entries
+    const apps = capture.getAudioApps({ sortByActivity: true });
+
+    // Verify stale entry was removed
+    assert.ok(!capture._audioActivityCache.has(100), 'Stale entry should be removed');
+    assert.ok(capture._audioActivityCache.has(200), 'Fresh entry should remain');
+    assert.ok(apps.length > 0);
+
+    done();
+  });
+
+  await t.test('should add hint when all apps are filtered out', (t: TestContext, done: () => void) => {
+    // Create mock with only system apps that will all be filtered
+    const systemOnlyApps: ApplicationInfo[] = [
+      { processId: 300, bundleIdentifier: 'com.apple.finder', applicationName: 'Finder' },
+      { processId: 301, bundleIdentifier: 'com.apple.systempreferences', applicationName: 'System Preferences' }
+    ];
+
+    const mockNativeFiltered = {
+      ScreenCaptureKit: class {
+        getAvailableApps(): ApplicationInfo[] {
+          return systemOnlyApps;
+        }
+        startCapture(): boolean {
+          return true;
+        }
+        stopCapture(): void { }
+      }
+    };
+
+    const sdk = loadSDKWithMock({ nativeMock: mockNativeFiltered });
+    const capture = new sdk.AudioCapture();
+
+    // Get audio apps - all should be filtered (system apps)
+    const audioApps = capture.getAudioApps();
+
+    // Result should be empty array with _hint property
+    assert.equal(audioApps.length, 0);
+    assert.ok((audioApps as any)._hint, 'Should have _hint property when all filtered');
+    assert.ok((audioApps as any)._hint.includes('getAudioApps'), 'Hint should mention getAudioApps alternative');
+
+    done();
   });
 });

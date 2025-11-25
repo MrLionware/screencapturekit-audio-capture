@@ -26,6 +26,7 @@ export interface NativeCaptureConfig {
   format?: string;
   sampleRate?: number;
   channels?: number;
+  bufferSize?: number;
   excludeCursor?: boolean;
 }
 
@@ -33,6 +34,13 @@ export interface NativeCaptureConfig {
  * Callback for audio samples from native layer
  */
 export type NativeAudioCallback = (sample: NativeAudioSample) => void;
+
+/**
+ * Interface for any native ScreenCaptureKit implementation (real or mock)
+ */
+export interface NativeScreenCaptureKitClass {
+  new (...args: any[]): any;
+}
 
 /**
  * Options for creating native mock
@@ -60,15 +68,15 @@ export class MockScreenCaptureKit {
   private readonly _onStart: CreateNativeMockOptions['onStart'];
   private readonly _onStop: CreateNativeMockOptions['onStop'];
   private readonly _captureSupport: boolean;
-  private _capturing: boolean = false;
-  private _activeCallback: NativeAudioCallback | null = null;
+  protected _capturing: boolean = false;
+  protected _activeCallback: NativeAudioCallback | null = null;
 
   constructor(options: CreateNativeMockOptions = {}) {
     this._apps = options.apps ?? MOCK_APPS.slice(0, 3);
     this._windows = options.windows ?? MOCK_WINDOWS;
     this._displays = options.displays ?? MOCK_DISPLAYS;
-    this._onStart = options.onStart ?? null;
-    this._onStop = options.onStop ?? null;
+    this._onStart = options.onStart;
+    this._onStop = options.onStop;
     this._captureSupport = options.captureSupport ?? true;
   }
 

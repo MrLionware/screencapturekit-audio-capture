@@ -28,7 +28,7 @@ test('Static Utilities', async (t) => {
   });
 
   await t.test('Audio Level Conversions', async (t) => {
-    await t.test('should calculate decibels from RMS/peak', () => {
+    await t.test('should calculate decibels from RMS', () => {
       const { AudioCapture } = loadSDKWithMock();
 
       // 1.0 -> 0 dB
@@ -37,11 +37,67 @@ test('Static Utilities', async (t) => {
       assert.ok(Math.abs(AudioCapture.rmsToDb(0.5) - (-6.02)) < 0.01);
       // 0 -> -Infinity
       assert.equal(AudioCapture.rmsToDb(0), -Infinity);
+      // Negative value -> -Infinity
+      assert.equal(AudioCapture.rmsToDb(-0.5), -Infinity);
+    });
+
+    await t.test('should calculate decibels from peak', () => {
+      const { AudioCapture } = loadSDKWithMock();
+
+      // 1.0 -> 0 dB
+      assert.equal(AudioCapture.peakToDb(1.0), 0);
+      // 0.5 -> ~-6 dB
+      assert.ok(Math.abs(AudioCapture.peakToDb(0.5) - (-6.02)) < 0.01);
+      // 0 -> -Infinity
+      assert.equal(AudioCapture.peakToDb(0), -Infinity);
+      // Negative value -> -Infinity
+      assert.equal(AudioCapture.peakToDb(-0.5), -Infinity);
+    });
+
+    await t.test('should calculate dB from samples using RMS method', () => {
+      const { AudioCapture } = loadSDKWithMock();
+
+      // Create a constant signal with amplitude 0.5
+      const floatData = new Float32Array(100);
+      floatData.fill(0.5);
+      const buffer = Buffer.from(floatData.buffer);
+
+      // RMS of constant 0.5 signal is 0.5 -> ~-6 dB
+      const db = AudioCapture.calculateDb(buffer, 'rms');
+      assert.ok(Math.abs(db - (-6.02)) < 0.1);
+    });
+
+    await t.test('should calculate dB from samples using peak method', () => {
+      const { AudioCapture } = loadSDKWithMock();
+
+      // Create signal with peak at 1.0
+      const floatData = new Float32Array(100);
+      floatData.fill(0.5);
+      floatData[50] = 1.0; // Peak value
+
+      const buffer = Buffer.from(floatData.buffer);
+
+      // Peak is 1.0 -> 0 dB
+      const db = AudioCapture.calculateDb(buffer, 'peak');
+      assert.equal(db, 0);
+    });
+
+    await t.test('should default to RMS method when no method specified', () => {
+      const { AudioCapture } = loadSDKWithMock();
+
+      const floatData = new Float32Array(100);
+      floatData.fill(0.5);
+      const buffer = Buffer.from(floatData.buffer);
+
+      // Default should be RMS
+      const dbDefault = AudioCapture.calculateDb(buffer);
+      const dbExplicit = AudioCapture.calculateDb(buffer, 'rms');
+      assert.equal(dbDefault, dbExplicit);
     });
   });
 
   await t.test('WAV File Generation', async (t) => {
-    await t.test('should create valid WAV header', () => {
+    await t.test('should create valid WAV header for float32', () => {
       const { AudioCapture } = loadSDKWithMock();
       const floatData = new Float32Array(100);
       const buffer = Buffer.from(floatData.buffer);
@@ -62,6 +118,91 @@ test('Static Utilities', async (t) => {
 
       // Check channels (offset 22, 2 bytes)
       assert.equal(wav.readUInt16LE(22), 2);
+
+      // Check audio format (offset 20, 2 bytes) - 3 = IEEE Float
+      assert.equal(wav.readUInt16LE(20), 3);
+
+      // Check bits per sample (offset 34, 2 bytes) - 32 bits
+      assert.equal(wav.readUInt16LE(34), 32);
+    });
+
+    await t.test('should create valid WAV header for int16', () => {
+      const { AudioCapture } = loadSDKWithMock();
+      const int16Data = new Int16Array(100);
+      const buffer = Buffer.from(int16Data.buffer);
+
+      const wav = AudioCapture.writeWav(buffer, {
+        sampleRate: 44100,
+        channels: 1,
+        format: 'int16'
+      });
+
+      // Check RIFF header
+      assert.equal(wav.toString('ascii', 0, 4), 'RIFF');
+      assert.equal(wav.toString('ascii', 8, 12), 'WAVE');
+
+      // Check sample rate
+      assert.equal(wav.readUInt32LE(24), 44100);
+
+      // Check channels
+      assert.equal(wav.readUInt16LE(22), 1);
+
+      // Check audio format (offset 20, 2 bytes) - 1 = PCM
+      assert.equal(wav.readUInt16LE(20), 1);
+
+      // Check bits per sample (offset 34, 2 bytes) - 16 bits
+      assert.equal(wav.readUInt16LE(34), 16);
+    });
+
+    await t.test('should throw when sampleRate is missing', () => {
+      const { AudioCapture } = loadSDKWithMock();
+      const buffer = Buffer.alloc(100);
+
+      assert.throws(() => {
+        AudioCapture.writeWav(buffer, {
+          channels: 2,
+          format: 'float32'
+        } as any);
+      }, /sampleRate and channels are required/);
+    });
+
+    await t.test('should throw when channels is missing', () => {
+      const { AudioCapture } = loadSDKWithMock();
+      const buffer = Buffer.alloc(100);
+
+      assert.throws(() => {
+        AudioCapture.writeWav(buffer, {
+          sampleRate: 48000,
+          format: 'float32'
+        } as any);
+      }, /sampleRate and channels are required/);
+    });
+
+    await t.test('should throw when format is invalid', () => {
+      const { AudioCapture } = loadSDKWithMock();
+      const buffer = Buffer.alloc(100);
+
+      assert.throws(() => {
+        AudioCapture.writeWav(buffer, {
+          sampleRate: 48000,
+          channels: 2,
+          format: 'invalid' as any
+        });
+      }, /format must be "float32" or "int16"/);
+    });
+
+    await t.test('should default to float32 format when not specified', () => {
+      const { AudioCapture } = loadSDKWithMock();
+      const floatData = new Float32Array(100);
+      const buffer = Buffer.from(floatData.buffer);
+
+      const wav = AudioCapture.writeWav(buffer, {
+        sampleRate: 48000,
+        channels: 2
+      });
+
+      // Check audio format (offset 20, 2 bytes) - 3 = IEEE Float (default)
+      assert.equal(wav.readUInt16LE(20), 3);
     });
   });
 });
@@ -212,10 +353,11 @@ test('AudioCapture Utilities', async (t) => {
       });
 
       assert.ok(nativeConfigReceived);
-      assert.equal(nativeConfigReceived!.sampleRate, 44100);
-      assert.equal(nativeConfigReceived!.channels, 1);
-      assert.equal(nativeConfigReceived!.bufferSize, 2048);
-      assert.equal(nativeConfigReceived!.excludeCursor, false);
+      const config = nativeConfigReceived as NativeCaptureConfig;
+      assert.equal(config.sampleRate, 44100);
+      assert.equal(config.channels, 1);
+      assert.equal(config.bufferSize, 2048);
+      assert.equal(config.excludeCursor, false);
       done();
     });
   });
