@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2025-11-25
+
+### Added
+- **Multi-app capture:** New `captureMultipleApps()` method to capture audio from multiple applications simultaneously
+- **Multi-window capture:** New `captureMultipleWindows()` method to capture audio from multiple windows at once
+- **Multi-display capture:** New `captureMultipleDisplays()` method to capture audio from multiple displays
+- **Partial capture support:** All multi-capture methods support `allowPartial` option to start capture even if some targets aren't found
+- **New examples:** Added 7 new TypeScript examples (13-19) demonstrating multi-capture and advanced methods
+
+### Changed
+- **Native module loading:** Refactored to use dedicated `src/native.ts` loader with Release/Debug build fallback
+- **Removed legacy files:** Deleted root-level `index.js`, `index.d.ts`, and `sdk.js` in favor of compiled `dist/` output
+
+### Improved
+- **Test runner:** Enhanced `run_all.sh` with interactive window/display selection and multi-app target support
+- **Documentation:** Updated README with comprehensive multi-capture API documentation
+
 ## [1.3.3] - 2025-11-25
 
 ### Fixed
