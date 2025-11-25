@@ -28,6 +28,10 @@ export interface WindowInfo {
     readonly owningProcessId: number;
     readonly onScreen: boolean;
     readonly frame: WindowFrame | null;
+    readonly layer?: number;
+    readonly active?: boolean;
+    readonly owningApplicationName?: string;
+    readonly owningBundleIdentifier?: string;
 }
 /**
  * Display information from ScreenCaptureKit
@@ -37,6 +41,7 @@ export interface DisplayInfo {
     readonly width: number;
     readonly height: number;
     readonly frame: WindowFrame | null;
+    readonly isMainDisplay?: boolean;
 }
 /**
  * Audio sample format

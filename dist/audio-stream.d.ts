@@ -4,17 +4,7 @@
  */
 import { Readable } from 'stream';
 import type { AudioCapture } from './audio-capture';
-import type { AppIdentifier, CaptureOptions, CaptureInfo } from './types';
-/**
- * Options for creating an AudioStream
- */
-export interface AudioStreamOptions extends CaptureOptions {
-    /**
-     * Enable object mode to receive full sample objects instead of just raw audio data
-     * @default false
-     */
-    readonly objectMode?: boolean;
-}
+import type { AppIdentifier, CaptureInfo, AudioStreamOptions } from './types';
 /**
  * Readable stream for audio capture
  * Provides a stream-based alternative to the EventEmitter API
