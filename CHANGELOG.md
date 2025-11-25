@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-11-24
+
+### Added - TypeScript Migration
+- **Full TypeScript source**: Migrated core modules (audio-capture, audio-stream, stt-converter, errors, types) to TypeScript for improved type safety and developer experience
+- **Compiled distribution**: Package now includes pre-compiled `dist/` directory with `.js`, `.d.ts`, and source maps
+- **TypeScript test suite**: All tests migrated to TypeScript with proper type annotations
+- **TypeScript examples**: Added `typescript-example.ts` and `examples/tsconfig.json` for running typed examples
+- **README code samples**: New `readme_examples/` directory with 12 standalone TypeScript examples demonstrating various use cases
+
+### Changed
+- **Package entry point**: Main entry changed from `sdk.js` to `dist/index.js` for TypeScript-compiled output
+- **Type definitions**: Types now exported from `dist/index.d.ts` instead of `index.d.ts`
+- **Build scripts**: Updated to include TypeScript compilation (`build:ts`) alongside native build
+- **Test runner**: Switched from `node --test` to `tsx --test` for TypeScript test execution
+- **Documentation**: All README code examples updated to TypeScript syntax
+
+### Fixed
+- **API consistency**: `findApplication()` and `getApplicationByPid()` now return `null` instead of `undefined` when app not found
+
+### Developer Dependencies
+- Added `typescript` ^5.9.3
+- Added `tsx` ^4.20.6 for running TypeScript tests
+- Added `ts-node` ^10.9.2 for running TypeScript examples
+- Added `@types/node` ^20.19.25
+- Added `rimraf` ^5.0.10 for clean builds
+
 ## [1.2.4] - 2025-11-23
 
 ### Added
