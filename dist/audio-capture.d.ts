@@ -5,7 +5,7 @@
 import { EventEmitter } from 'events';
 import { AudioStream } from './audio-stream';
 import { STTConverter } from './stt-converter';
-import type { ApplicationInfo, WindowInfo, DisplayInfo, CaptureInfo, CaptureOptions, GetApplicationsOptions, GetWindowsOptions, GetAudioAppsOptions, SelectAppOptions, ActivityTrackingOptions, ActivityInfo, PermissionStatus, CaptureStatus, AudioStreamOptions, STTStreamOptions, WavOptions, AppIdentifier } from './types';
+import type { ApplicationInfo, WindowInfo, DisplayInfo, CaptureInfo, CaptureOptions, GetApplicationsOptions, GetWindowsOptions, GetAudioAppsOptions, SelectAppOptions, ActivityTrackingOptions, ActivityInfo, PermissionStatus, CaptureStatus, AudioStreamOptions, STTStreamOptions, WavOptions, AppIdentifier, MultiAppCaptureOptions, MultiAppIdentifier, MultiWindowCaptureOptions, MultiWindowIdentifier, MultiDisplayCaptureOptions, MultiDisplayIdentifier } from './types';
 /**
  * Main AudioCapture class
  * High-level API for capturing audio from macOS applications
@@ -132,6 +132,40 @@ export declare class AudioCapture extends EventEmitter {
      */
     captureDisplay(displayId: number, options?: CaptureOptions): boolean;
     /**
+     * Start capturing audio from multiple applications simultaneously
+     * Useful for recording game + Discord, Zoom + Music, etc.
+     * @param appIdentifiers - Array of app names, bundle IDs, process IDs, or ApplicationInfo objects
+     * @param options - Capture options
+     * @returns true if capture started successfully
+     * @throws {AudioCaptureError} Throws structured error with code and details if capture fails
+     * @fires AudioCapture#start
+     * @fires AudioCapture#audio
+     * @fires AudioCapture#error
+     */
+    captureMultipleApps(appIdentifiers: MultiAppIdentifier, options?: MultiAppCaptureOptions): boolean;
+    /**
+     * Start capturing audio from multiple windows simultaneously
+     * @param windowIdentifiers - Array of window IDs or WindowInfo objects
+     * @param options - Capture options
+     * @returns true if capture started successfully
+     * @throws {AudioCaptureError} Throws structured error with code and details if capture fails
+     * @fires AudioCapture#start
+     * @fires AudioCapture#audio
+     * @fires AudioCapture#error
+     */
+    captureMultipleWindows(windowIdentifiers: MultiWindowIdentifier, options?: MultiWindowCaptureOptions): boolean;
+    /**
+     * Start capturing audio from multiple displays simultaneously
+     * @param displayIdentifiers - Array of display IDs or DisplayInfo objects
+     * @param options - Capture options
+     * @returns true if capture started successfully
+     * @throws {AudioCaptureError} Throws structured error with code and details if capture fails
+     * @fires AudioCapture#start
+     * @fires AudioCapture#audio
+     * @fires AudioCapture#error
+     */
+    captureMultipleDisplays(displayIdentifiers: MultiDisplayIdentifier, options?: MultiDisplayCaptureOptions): boolean;
+    /**
      * Stop the current capture session
      * @fires AudioCapture#stop
      */
@@ -204,6 +238,11 @@ export declare class AudioCapture extends EventEmitter {
      * @internal
      */
     private _startNativeCapture;
+    /**
+     * Start native capture for multiple apps with unified logic
+     * @internal
+     */
+    private _startNativeCaptureMultiApp;
     /**
      * Handle native audio sample
      * @internal

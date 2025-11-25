@@ -32,8 +32,8 @@ class AudioCapture extends events_1.EventEmitter {
         this._activityTrackingEnabled = false;
         this._activityDecayMs = 30000; // Remove apps from cache after 30s of inactivity
         // Import the native binding
-        const nativeModule = require('../index');
-        this.captureKit = new nativeModule.ScreenCaptureKit();
+        const { ScreenCaptureKit: NativeScreenCaptureKit } = require('./native');
+        this.captureKit = new NativeScreenCaptureKit();
     }
     // ==================== Application Discovery ====================
     /**
@@ -176,6 +176,11 @@ class AudioCapture extends events_1.EventEmitter {
                 }
                 return true;
             });
+        }
+        if (!includeSystemApps && filtered.length === 0 && apps.length > 0) {
+            // Add hint for debugging - matches JS SDK behavior
+            filtered._hint =
+                'No audio apps found after filtering. Try getAudioApps({ includeSystemApps: true }) or getApplications() to see all apps.';
         }
         if (sortByActivity && this._activityTrackingEnabled) {
             const now = Date.now();
@@ -516,6 +521,223 @@ class AudioCapture extends events_1.EventEmitter {
         return this._startNativeCapture(target, options, nativeStarter);
     }
     /**
+     * Start capturing audio from multiple applications simultaneously
+     * Useful for recording game + Discord, Zoom + Music, etc.
+     * @param appIdentifiers - Array of app names, bundle IDs, process IDs, or ApplicationInfo objects
+     * @param options - Capture options
+     * @returns true if capture started successfully
+     * @throws {AudioCaptureError} Throws structured error with code and details if capture fails
+     * @fires AudioCapture#start
+     * @fires AudioCapture#audio
+     * @fires AudioCapture#error
+     */
+    captureMultipleApps(appIdentifiers, options = {}) {
+        this._assertNativeMethod('startCaptureMultiApp', 'Multi-app capture');
+        const { allowPartial = true, ...captureOptions } = options;
+        if (!Array.isArray(appIdentifiers) || appIdentifiers.length === 0) {
+            const error = errors_1.AudioCaptureError.invalidArgument('appIdentifiers must be a non-empty array of app names, bundle IDs, process IDs, or ApplicationInfo objects', { receivedType: typeof appIdentifiers });
+            this.emit('error', error);
+            throw error;
+        }
+        // Resolve all app identifiers to ApplicationInfo objects
+        const apps = this.getApplications();
+        const resolvedApps = [];
+        const notFoundIdentifiers = [];
+        for (const identifier of appIdentifiers) {
+            let foundApp = null;
+            if (typeof identifier === 'number') {
+                // PID
+                foundApp = apps.find((a) => a.processId === identifier) || null;
+                if (!foundApp)
+                    notFoundIdentifiers.push(identifier);
+            }
+            else if (typeof identifier === 'string') {
+                const search = identifier.toLowerCase().trim();
+                if (search.length === 0)
+                    continue;
+                // Try exact name match first
+                foundApp = apps.find((a) => a.applicationName.toLowerCase() === search) || null;
+                // Try exact bundle ID match
+                if (!foundApp) {
+                    foundApp = apps.find((a) => a.bundleIdentifier.toLowerCase() === search) || null;
+                }
+                // Try partial name match
+                if (!foundApp) {
+                    foundApp = apps.find((a) => a.applicationName.toLowerCase().includes(search)) || null;
+                }
+                // Try partial bundle ID match
+                if (!foundApp) {
+                    foundApp = apps.find((a) => a.bundleIdentifier.toLowerCase().includes(search)) || null;
+                }
+                if (!foundApp)
+                    notFoundIdentifiers.push(identifier);
+            }
+            else if (typeof identifier === 'object' && identifier !== null && 'processId' in identifier) {
+                // ApplicationInfo object - verify it still exists
+                foundApp = apps.find((a) => a.processId === identifier.processId) || null;
+                if (!foundApp)
+                    notFoundIdentifiers.push(identifier.processId);
+            }
+            if (foundApp && !resolvedApps.some((a) => a.processId === foundApp.processId)) {
+                resolvedApps.push(foundApp);
+            }
+        }
+        // Check if we found any apps
+        if (resolvedApps.length === 0) {
+            const error = errors_1.AudioCaptureError.appNotFound(appIdentifiers.map((id) => (typeof id === 'object' ? id.applicationName : String(id))).join(', '), apps.map((a) => a.applicationName));
+            this.emit('error', error);
+            throw error;
+        }
+        // If allowPartial is false and some apps weren't found, throw error
+        if (!allowPartial && notFoundIdentifiers.length > 0) {
+            const error = new errors_1.AudioCaptureError(`Some applications not found: ${notFoundIdentifiers.join(', ')}`, errors_1.ErrorCode.APP_NOT_FOUND, {
+                notFound: notFoundIdentifiers,
+                found: resolvedApps.map((a) => a.applicationName),
+                suggestion: 'Set allowPartial: true to capture from available apps only',
+            });
+            this.emit('error', error);
+            throw error;
+        }
+        const processIds = resolvedApps.map((app) => app.processId);
+        const target = {
+            type: 'multi-app',
+            processId: processIds[0], // Primary app for backward compatibility
+            app: resolvedApps[0],
+            apps: resolvedApps,
+            window: null,
+            display: null,
+            failureMessage: 'Failed to start multi-app capture',
+            failureDetails: {
+                processIds,
+                apps: resolvedApps,
+                notFound: notFoundIdentifiers,
+                suggestion: 'One or more applications may not support audio capture.',
+            },
+        };
+        const nativeStarter = (nativeConfig, callback) => this.captureKit.startCaptureMultiApp(processIds, nativeConfig, callback);
+        return this._startNativeCaptureMultiApp(target, captureOptions, nativeStarter, resolvedApps);
+    }
+    /**
+     * Start capturing audio from multiple windows simultaneously
+     * @param windowIdentifiers - Array of window IDs or WindowInfo objects
+     * @param options - Capture options
+     * @returns true if capture started successfully
+     * @throws {AudioCaptureError} Throws structured error with code and details if capture fails
+     * @fires AudioCapture#start
+     * @fires AudioCapture#audio
+     * @fires AudioCapture#error
+     */
+    captureMultipleWindows(windowIdentifiers, options = {}) {
+        this._assertNativeMethod('startCaptureMultiWindow', 'Multi-window capture');
+        const { allowPartial = true, ...captureOptions } = options;
+        if (!Array.isArray(windowIdentifiers) || windowIdentifiers.length === 0) {
+            const error = errors_1.AudioCaptureError.invalidArgument('windowIdentifiers must be a non-empty array of window IDs or WindowInfo objects', { receivedType: typeof windowIdentifiers });
+            this.emit('error', error);
+            throw error;
+        }
+        const allWindows = this.getWindows();
+        const resolvedWindows = [];
+        const notFoundIds = [];
+        for (const identifier of windowIdentifiers) {
+            let foundWindow = null;
+            if (typeof identifier === 'number') {
+                foundWindow = allWindows.find((w) => w.windowId === identifier) || null;
+                if (!foundWindow)
+                    notFoundIds.push(identifier);
+            }
+            else if (typeof identifier === 'object' && identifier !== null && 'windowId' in identifier) {
+                foundWindow = allWindows.find((w) => w.windowId === identifier.windowId) || null;
+                if (!foundWindow)
+                    notFoundIds.push(identifier.windowId);
+            }
+            if (foundWindow && !resolvedWindows.some((w) => w.windowId === foundWindow.windowId)) {
+                resolvedWindows.push(foundWindow);
+            }
+        }
+        if (resolvedWindows.length === 0) {
+            const error = new errors_1.AudioCaptureError('No windows found with the specified IDs', errors_1.ErrorCode.INVALID_ARGUMENT, { requestedIds: windowIdentifiers, availableWindows: allWindows.map((w) => ({ id: w.windowId, title: w.title })) });
+            this.emit('error', error);
+            throw error;
+        }
+        if (!allowPartial && notFoundIds.length > 0) {
+            const error = new errors_1.AudioCaptureError(`Some windows not found: ${notFoundIds.join(', ')}`, errors_1.ErrorCode.INVALID_ARGUMENT, { notFound: notFoundIds, found: resolvedWindows.map((w) => w.windowId) });
+            this.emit('error', error);
+            throw error;
+        }
+        const windowIds = resolvedWindows.map((w) => w.windowId);
+        const target = {
+            type: 'window',
+            processId: resolvedWindows[0].owningProcessId || null,
+            app: null,
+            window: resolvedWindows[0],
+            display: null,
+            failureMessage: 'Failed to start multi-window capture',
+            failureDetails: { windowIds, notFound: notFoundIds },
+        };
+        const nativeStarter = (nativeConfig, callback) => this.captureKit.startCaptureMultiWindow(windowIds, nativeConfig, callback);
+        return this._startNativeCapture(target, captureOptions, nativeStarter);
+    }
+    /**
+     * Start capturing audio from multiple displays simultaneously
+     * @param displayIdentifiers - Array of display IDs or DisplayInfo objects
+     * @param options - Capture options
+     * @returns true if capture started successfully
+     * @throws {AudioCaptureError} Throws structured error with code and details if capture fails
+     * @fires AudioCapture#start
+     * @fires AudioCapture#audio
+     * @fires AudioCapture#error
+     */
+    captureMultipleDisplays(displayIdentifiers, options = {}) {
+        this._assertNativeMethod('startCaptureMultiDisplay', 'Multi-display capture');
+        const { allowPartial = true, ...captureOptions } = options;
+        if (!Array.isArray(displayIdentifiers) || displayIdentifiers.length === 0) {
+            const error = errors_1.AudioCaptureError.invalidArgument('displayIdentifiers must be a non-empty array of display IDs or DisplayInfo objects', { receivedType: typeof displayIdentifiers });
+            this.emit('error', error);
+            throw error;
+        }
+        const allDisplays = this.getDisplays();
+        const resolvedDisplays = [];
+        const notFoundIds = [];
+        for (const identifier of displayIdentifiers) {
+            let foundDisplay = null;
+            if (typeof identifier === 'number') {
+                foundDisplay = allDisplays.find((d) => d.displayId === identifier) || null;
+                if (!foundDisplay)
+                    notFoundIds.push(identifier);
+            }
+            else if (typeof identifier === 'object' && identifier !== null && 'displayId' in identifier) {
+                foundDisplay = allDisplays.find((d) => d.displayId === identifier.displayId) || null;
+                if (!foundDisplay)
+                    notFoundIds.push(identifier.displayId);
+            }
+            if (foundDisplay && !resolvedDisplays.some((d) => d.displayId === foundDisplay.displayId)) {
+                resolvedDisplays.push(foundDisplay);
+            }
+        }
+        if (resolvedDisplays.length === 0) {
+            const error = new errors_1.AudioCaptureError('No displays found with the specified IDs', errors_1.ErrorCode.INVALID_ARGUMENT, { requestedIds: displayIdentifiers, availableDisplays: allDisplays.map((d) => ({ id: d.displayId, main: d.isMainDisplay })) });
+            this.emit('error', error);
+            throw error;
+        }
+        if (!allowPartial && notFoundIds.length > 0) {
+            const error = new errors_1.AudioCaptureError(`Some displays not found: ${notFoundIds.join(', ')}`, errors_1.ErrorCode.INVALID_ARGUMENT, { notFound: notFoundIds, found: resolvedDisplays.map((d) => d.displayId) });
+            this.emit('error', error);
+            throw error;
+        }
+        const displayIds = resolvedDisplays.map((d) => d.displayId);
+        const target = {
+            type: 'display',
+            processId: null,
+            app: null,
+            window: null,
+            display: resolvedDisplays[0],
+            failureMessage: 'Failed to start multi-display capture',
+            failureDetails: { displayIds, notFound: notFoundIds },
+        };
+        const nativeStarter = (nativeConfig, callback) => this.captureKit.startCaptureMultiDisplay(displayIds, nativeConfig, callback);
+        return this._startNativeCapture(target, captureOptions, nativeStarter);
+    }
+    /**
      * Stop the current capture session
      * @fires AudioCapture#stop
      */
@@ -784,6 +1006,49 @@ class AudioCapture extends events_1.EventEmitter {
         return success;
     }
     /**
+     * Start native capture for multiple apps with unified logic
+     * @internal
+     */
+    _startNativeCaptureMultiApp(target, options, startInvoker, resolvedApps) {
+        if (this.capturing) {
+            const error = errors_1.AudioCaptureError.alreadyCapturing({
+                currentProcessId: this.currentProcessId,
+                currentApp: this.currentAppInfo,
+                currentTarget: this._createTargetSnapshot(),
+            });
+            this.emit('error', error);
+            throw error;
+        }
+        this.captureOptions = {
+            minVolume: options.minVolume || 0,
+            format: options.format || 'float32',
+        };
+        const nativeConfig = this._buildNativeConfig(options);
+        // For multi-app capture, we don't track activity by a single PID
+        const processIdForActivity = null;
+        const success = startInvoker(nativeConfig, (sample) => this._handleNativeSample(sample, processIdForActivity));
+        if (success) {
+            this.capturing = true;
+            this.currentProcessId = target.processId;
+            this.currentAppInfo = target.app;
+            this._currentTarget = {
+                processId: this.currentProcessId,
+                app: this.currentAppInfo,
+                apps: [...resolvedApps],
+                window: null,
+                display: null,
+                targetType: 'multi-app',
+            };
+            this.emit('start', this._createTargetSnapshot());
+        }
+        else {
+            const error = errors_1.AudioCaptureError.captureFailed(target.failureMessage, target.failureDetails);
+            this.emit('error', error);
+            throw error;
+        }
+        return success;
+    }
+    /**
      * Handle native audio sample
      * @internal
      */
@@ -903,13 +1168,18 @@ class AudioCapture extends events_1.EventEmitter {
         if (!target) {
             return null;
         }
-        return {
+        const snapshot = {
             processId: typeof target.processId === 'number' ? target.processId : null,
             app: this._cloneAppInfo(target.app),
             window: this._cloneWindowInfo(target.window),
             display: this._cloneDisplayInfo(target.display),
             targetType: target.targetType || 'application',
         };
+        // Include apps array for multi-app capture
+        if (target.apps && target.apps.length > 0) {
+            snapshot.apps = target.apps.map((a) => ({ ...a }));
+        }
+        return snapshot;
     }
     /**
      * Clone app info

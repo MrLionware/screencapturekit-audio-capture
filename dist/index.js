@@ -19,10 +19,9 @@ var errors_1 = require("./errors");
 Object.defineProperty(exports, "AudioCaptureError", { enumerable: true, get: function () { return errors_1.AudioCaptureError; } });
 Object.defineProperty(exports, "ErrorCode", { enumerable: true, get: function () { return errors_1.ErrorCode; } });
 Object.defineProperty(exports, "ErrorCodes", { enumerable: true, get: function () { return errors_1.ErrorCodes; } });
-// Import native binding
-// Note: The native binding is loaded from ../index.js at runtime
-const nativeModule = require('../index');
-exports.ScreenCaptureKit = nativeModule.ScreenCaptureKit;
+// Export native binding
+var native_1 = require("./native");
+Object.defineProperty(exports, "ScreenCaptureKit", { enumerable: true, get: function () { return native_1.ScreenCaptureKit; } });
 // Default export for convenience
 var audio_capture_2 = require("./audio-capture");
 Object.defineProperty(exports, "default", { enumerable: true, get: function () { return audio_capture_2.AudioCapture; } });
