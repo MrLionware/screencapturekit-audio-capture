@@ -28,7 +28,7 @@
               "CLANG_CXX_LIBRARY": "libc++",
               "MACOSX_DEPLOYMENT_TARGET": "13.0",
               "OTHER_CFLAGS": [
-                "-fobjc-arc"
+                "-fno-objc-arc"
               ],
               "WARNING_CFLAGS": [
                 "-Wall",

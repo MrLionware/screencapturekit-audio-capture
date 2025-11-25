@@ -7,16 +7,36 @@
 #include <mutex>
 
 // Objective-C delegate to handle audio samples
-@interface AudioCaptureDelegate : NSObject <SCStreamOutput, SCStreamDelegate>
+// NOTE: Manual reference counting (MRC) required for macOS 26.2+ ARC bug workaround (FB21107737)
+@interface AudioCaptureDelegate : NSObject <SCStreamOutput, SCStreamDelegate> {
+    void(^_audioCallback)(CMSampleBufferRef);
+}
 @property (nonatomic, copy) void(^audioCallback)(CMSampleBufferRef);
 @end
 
 @implementation AudioCaptureDelegate
 
-- (void)stream:(SCStream *)stream didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer ofType:(SCStreamOutputType)type {
-    if (type == SCStreamOutputTypeAudio && self.audioCallback) {
-        self.audioCallback(sampleBuffer);
+@synthesize audioCallback = _audioCallback;
+
+- (void)setAudioCallback:(void(^)(CMSampleBufferRef))audioCallback {
+    if (_audioCallback != audioCallback) {
+        [_audioCallback release];
+        _audioCallback = [audioCallback copy];
     }
+}
+
+- (void)dealloc {
+    [_audioCallback release];
+    [super dealloc];
+}
+
+- (void)stream:(SCStream *)stream didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer ofType:(SCStreamOutputType)type {
+    // Only process audio samples - video samples are discarded immediately
+    // This is intentional for audio-only capture to minimize overhead
+    if (type == SCStreamOutputTypeAudio && _audioCallback) {
+        _audioCallback(sampleBuffer);
+    }
+    // SCStreamOutputTypeScreen samples are intentionally ignored and immediately discarded
 }
 
 - (void)stream:(SCStream *)stream didStopWithError:(NSError *)error {
@@ -28,37 +48,80 @@
 @end
 
 // Implementation class
-@interface ScreenCaptureKitImpl : NSObject
-@property (nonatomic, strong) SCStream *stream;
-@property (nonatomic, strong) AudioCaptureDelegate *delegate;
-@property (nonatomic, strong) SCContentFilter *contentFilter;
+// NOTE: Manual reference counting (MRC) required for macOS 26.2+ ARC bug workaround (FB21107737)
+@interface ScreenCaptureKitImpl : NSObject {
+    SCStream *_stream;
+    AudioCaptureDelegate *_delegate;
+    SCContentFilter *_contentFilter;
+    BOOL _isCapturing;
+}
+@property (nonatomic, retain) SCStream *stream;
+@property (nonatomic, retain) AudioCaptureDelegate *delegate;
+@property (nonatomic, retain) SCContentFilter *contentFilter;
 @property (nonatomic, assign) BOOL isCapturing;
 @end
 
 @implementation ScreenCaptureKitImpl
 
+@synthesize stream = _stream;
+@synthesize delegate = _delegate;
+@synthesize contentFilter = _contentFilter;
+@synthesize isCapturing = _isCapturing;
+
 - (instancetype)init {
     self = [super init];
     if (self) {
         _isCapturing = NO;
+        _stream = nil;
+        _delegate = nil;
+        _contentFilter = nil;
     }
     return self;
 }
 
 - (void)dealloc {
     [self stopCapture];
+    [_stream release];
+    [_delegate release];
+    [_contentFilter release];
+    [super dealloc];
+}
+
+- (void)setStream:(SCStream *)stream {
+    if (_stream != stream) {
+        [_stream release];
+        _stream = [stream retain];
+    }
+}
+
+- (void)setDelegate:(AudioCaptureDelegate *)delegate {
+    if (_delegate != delegate) {
+        [_delegate release];
+        _delegate = [delegate retain];
+    }
+}
+
+- (void)setContentFilter:(SCContentFilter *)contentFilter {
+    if (_contentFilter != contentFilter) {
+        [_contentFilter release];
+        _contentFilter = [contentFilter retain];
+    }
 }
 
 - (void)stopCapture {
-    if (self.stream && self.isCapturing) {
-        [self.stream stopCaptureWithCompletionHandler:^(NSError * _Nullable error) {
+    if (_stream && _isCapturing) {
+        [_stream stopCaptureWithCompletionHandler:^(NSError * _Nullable error) {
             if (error) {
                 NSLog(@"Error stopping capture: %@", error.localizedDescription);
             }
         }];
-        self.isCapturing = NO;
-        self.stream = nil;
-        self.delegate = nil;
+        _isCapturing = NO;
+        [_stream release];
+        _stream = nil;
+        [_delegate release];
+        _delegate = nil;
+        [_contentFilter release];
+        _contentFilter = nil;
     }
 }
 
@@ -74,6 +137,15 @@ struct WrapperImpl {
 };
 
 namespace {
+
+// Helper to run the main run loop until a condition is met or timeout
+// This is required on macOS 26+ where SCKit dispatches completion handlers to main queue
+void RunLoopUntilComplete(bool *completed, double timeoutSeconds) {
+    CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + timeoutSeconds;
+    while (!*completed && CFAbsoluteTimeGetCurrent() < deadline) {
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, true);
+    }
+}
 
 Rect RectFromCGRect(CGRect rect) {
     Rect result;
@@ -220,29 +292,40 @@ bool StartStreamWithFilter(WrapperImpl *wrapper, SCContentFilter *filter, const 
         return false;
     }
 
-
-
     wrapper->objcImpl.contentFilter = filter;
+    [filter release]; // Transfer ownership to contentFilter property
 
     SCStreamConfiguration *streamConfig = [[SCStreamConfiguration alloc] init];
+    
+    // Audio configuration
     streamConfig.capturesAudio = YES;
     streamConfig.sampleRate = config.sampleRate;
     streamConfig.channelCount = config.channels;
     streamConfig.excludesCurrentProcessAudio = YES;
-
-    if (config.bufferSize > 0) {
-        double bufferDuration = (double)config.bufferSize / (double)config.sampleRate;
-        streamConfig.minimumFrameInterval = CMTimeMake((int64_t)(bufferDuration * 1000000), 1000000);
-    }
+    
+    // Minimize video capture overhead for audio-only use case
+    // ScreenCaptureKit requires video capture even for audio-only, so we minimize it:
+    // - 2x2 pixels: smallest valid dimensions
+    // - 1 frame per 10 seconds: very slow frame rate
+    // - Minimal color format and queue depth
+    streamConfig.width = 2;
+    streamConfig.height = 2;
+    streamConfig.minimumFrameInterval = CMTimeMake(10, 1); // 1 frame per 10 seconds
+    streamConfig.showsCursor = NO;
+    streamConfig.queueDepth = 1;
+    streamConfig.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange; // Minimal color format
+    streamConfig.scalesToFit = YES; // Scale down to 2x2
 
     AudioCaptureDelegate *delegate = [[AudioCaptureDelegate alloc] init];
     delegate.audioCallback = ^(CMSampleBufferRef sampleBuffer) {
         HandleSampleBuffer(sampleBuffer, wrapper);
     };
     wrapper->objcImpl.delegate = delegate;
+    [delegate release]; // Transfer ownership to delegate property
 
     NSError *streamError = nil;
-    SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:streamConfig delegate:delegate];
+    SCStream *stream = [[SCStream alloc] initWithFilter:wrapper->objcImpl.contentFilter configuration:streamConfig delegate:wrapper->objcImpl.delegate];
+    [streamConfig release];
 
     if (!stream) {
         NSLog(@"Failed to create stream");
@@ -250,23 +333,43 @@ bool StartStreamWithFilter(WrapperImpl *wrapper, SCContentFilter *filter, const 
         wrapper->objcImpl.delegate = nil;
         return false;
     }
+    [stream autorelease]; // Will be retained by stream property
+    
+    // Store stream reference BEFORE starting capture (important for macOS 26+)
+    wrapper->objcImpl.stream = stream;
 
-    [stream addStreamOutput:delegate
+    // Add audio output handler on high priority queue for low latency
+    [stream addStreamOutput:wrapper->objcImpl.delegate
                        type:SCStreamOutputTypeAudio
          sampleHandlerQueue:dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0)
                      error:&streamError];
 
     if (streamError) {
-        NSLog(@"Error adding stream output: %@", streamError.localizedDescription);
+        NSLog(@"Error adding audio stream output: %@", streamError.localizedDescription);
+        wrapper->objcImpl.stream = nil;
         wrapper->objcImpl.contentFilter = nil;
         wrapper->objcImpl.delegate = nil;
         return false;
     }
 
-    // Wait for startCapture completion with timeout to handle macOS 26 beta hangs
+    // Add screen output handler to properly drain video frames and prevent buffering
+    // The delegate discards these frames immediately - this is required for proper audio-only capture
+    [stream addStreamOutput:wrapper->objcImpl.delegate
+                       type:SCStreamOutputTypeScreen
+         sampleHandlerQueue:dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0)
+                     error:&streamError];
+
+    if (streamError) {
+        // Non-fatal: audio capture can still work without screen output handler
+        // Just log a warning and continue
+        NSLog(@"Warning: Could not add screen output handler (audio-only mode): %@", streamError.localizedDescription);
+        streamError = nil; // Clear error to continue with audio-only
+    }
+
+    // Start capture - caller is responsible for pumping the run loop
+    // This is called from main queue context on macOS 26+
     __block bool success = false;
-    __block bool completed = false;
-    dispatch_semaphore_t startSemaphore = dispatch_semaphore_create(0);
+    __block bool startCompleted = false;
 
     [stream startCaptureWithCompletionHandler:^(NSError * _Nullable error) {
         if (error) {
@@ -277,27 +380,21 @@ bool StartStreamWithFilter(WrapperImpl *wrapper, SCContentFilter *filter, const 
             wrapper->objcImpl.contentFilter = nil;
             success = false;
         } else {
-            wrapper->objcImpl.stream = stream;
             wrapper->objcImpl.isCapturing = YES;
             success = true;
         }
-        completed = true;
-        dispatch_semaphore_signal(startSemaphore);
+        startCompleted = true;
     }];
 
-    // Wait up to 10 seconds for the completion handler
-    long waitResult = dispatch_semaphore_wait(startSemaphore, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+    // Pump run loop to allow completion handler delivery
+    RunLoopUntilComplete(&startCompleted, 10.0);
 
-    if (waitResult != 0) {
-        // Timeout - likely macOS 15+ bug where startCaptureWithCompletionHandler never completes
-        NSLog(@"Timeout waiting for capture to start (10s). This may indicate a macOS 15+ ScreenCaptureKit bug.");
-        if (!completed) {
-            // If still not completed after timeout, clean up
-            wrapper->objcImpl.isCapturing = NO;
-            wrapper->objcImpl.stream = nil;
-            wrapper->objcImpl.delegate = nil;
-            wrapper->objcImpl.contentFilter = nil;
-        }
+    if (!startCompleted) {
+        NSLog(@"Timeout waiting for capture to start (10s).");
+        wrapper->objcImpl.isCapturing = NO;
+        wrapper->objcImpl.stream = nil;
+        wrapper->objcImpl.delegate = nil;
+        wrapper->objcImpl.contentFilter = nil;
         return false;
     }
 
@@ -316,6 +413,7 @@ ScreenCaptureKitWrapper::~ScreenCaptureKitWrapper() {
     if (impl) {
         WrapperImpl *wrapper = static_cast<WrapperImpl*>(impl);
         [wrapper->objcImpl stopCapture];
+        [wrapper->objcImpl release];
         delete wrapper;
         impl = nullptr;
     }
@@ -434,49 +532,58 @@ bool ScreenCaptureKitWrapper::startCapture(int processId, const CaptureConfig& c
 
     wrapper->callback = callback;
     __block bool success = false;
-    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    __block bool completed = false;
+    __block SCShareableContent *capturedContent = nil;
 
+    // macOS 26+ dispatches SCKit completion handlers to main queue.
+    // Call directly and pump run loop to process completions.
     [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
         if (error || !content) {
             NSLog(@"Error getting shareable content: %@", error.localizedDescription);
-            dispatch_semaphore_signal(semaphore);
+            completed = true;
             return;
         }
-
-        // Find the application with matching process ID
-        SCRunningApplication *targetApp = nil;
-        for (SCRunningApplication *app in content.applications) {
-            if (app.processID == processId) {
-                targetApp = app;
-                break;
-            }
-        }
-
-        if (!targetApp) {
-            NSLog(@"Could not find application with process ID: %d", processId);
-            dispatch_semaphore_signal(semaphore);
-            return;
-        }
-
-        SCContentFilter *filter = nil;
-        if (content.displays.count > 0) {
-            NSMutableArray *excludedApps = [NSMutableArray arrayWithArray:content.applications];
-            [excludedApps removeObject:targetApp];
-            filter = [[SCContentFilter alloc] initWithDisplay:content.displays.firstObject
-                                         excludingApplications:excludedApps
-                                            exceptingWindows:@[]];
-        } else {
-            NSLog(@"No displays available for capture");
-            dispatch_semaphore_signal(semaphore);
-            return;
-        }
-
-        success = StartStreamWithFilter(wrapper, filter, config);
-        dispatch_semaphore_signal(semaphore);
+        // Retain content to avoid macOS 26.2 ARC bug (FB21107737)
+        capturedContent = [content retain];
+        completed = true;
     }];
 
-    dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+    RunLoopUntilComplete(&completed, 10.0);
+    
+    if (!capturedContent) {
+        return false;
+    }
 
+    // Find the application with matching process ID
+    SCRunningApplication *targetApp = nil;
+    for (SCRunningApplication *app in capturedContent.applications) {
+        if (app.processID == processId) {
+            targetApp = app;
+            break;
+        }
+    }
+
+    if (!targetApp) {
+        NSLog(@"Could not find application with process ID: %d", processId);
+        [capturedContent release];
+        return false;
+    }
+
+    SCContentFilter *filter = nil;
+    if (capturedContent.displays.count > 0) {
+        NSMutableArray *excludedApps = [NSMutableArray arrayWithArray:capturedContent.applications];
+        [excludedApps removeObject:targetApp];
+        filter = [[SCContentFilter alloc] initWithDisplay:capturedContent.displays.firstObject
+                                     excludingApplications:excludedApps
+                                        exceptingWindows:@[]];
+    } else {
+        NSLog(@"No displays available for capture");
+        [capturedContent release];
+        return false;
+    }
+
+    success = StartStreamWithFilter(wrapper, filter, config);
+    [capturedContent release];
     return success;
 }
 
@@ -492,42 +599,52 @@ bool ScreenCaptureKitWrapper::startCaptureForWindow(uint64_t windowId, const Cap
 
     wrapper->callback = callback;
     __block bool success = false;
-    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    __block bool completed = false;
+    __block SCShareableContent *capturedContent = nil;
 
+    // macOS 26+ dispatches SCKit completion handlers to main queue.
+    // Call directly and pump run loop to process completions.
     [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
         if (error || !content) {
             NSLog(@"Error getting shareable content: %@", error.localizedDescription);
-            dispatch_semaphore_signal(semaphore);
+            completed = true;
             return;
         }
-
-        SCWindow *targetWindow = nil;
-        for (SCWindow *window in content.windows) {
-            if (window.windowID == windowId) {
-                targetWindow = window;
-                break;
-            }
-        }
-
-        if (!targetWindow) {
-            NSLog(@"Could not find window with ID: %llu", (unsigned long long)windowId);
-            dispatch_semaphore_signal(semaphore);
-            return;
-        }
-
-        SCContentFilter *filter = [[SCContentFilter alloc] initWithDesktopIndependentWindow:targetWindow];
-
-        if (!filter) {
-            NSLog(@"Failed to create content filter for window: %llu", (unsigned long long)windowId);
-            dispatch_semaphore_signal(semaphore);
-            return;
-        }
-
-        success = StartStreamWithFilter(wrapper, filter, config);
-        dispatch_semaphore_signal(semaphore);
+        // Retain content to avoid macOS 26.2 ARC bug (FB21107737)
+        capturedContent = [content retain];
+        completed = true;
     }];
 
-    dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+    RunLoopUntilComplete(&completed, 10.0);
+    
+    if (!capturedContent) {
+        return false;
+    }
+
+    SCWindow *targetWindow = nil;
+    for (SCWindow *window in capturedContent.windows) {
+        if (window.windowID == windowId) {
+            targetWindow = window;
+            break;
+        }
+    }
+
+    if (!targetWindow) {
+        NSLog(@"Could not find window with ID: %llu", (unsigned long long)windowId);
+        [capturedContent release];
+        return false;
+    }
+
+    SCContentFilter *filter = [[SCContentFilter alloc] initWithDesktopIndependentWindow:targetWindow];
+
+    if (!filter) {
+        NSLog(@"Failed to create content filter for window: %llu", (unsigned long long)windowId);
+        [capturedContent release];
+        return false;
+    }
+
+    success = StartStreamWithFilter(wrapper, filter, config);
+    [capturedContent release];
     return success;
 }
 
@@ -543,38 +660,48 @@ bool ScreenCaptureKitWrapper::startCaptureForDisplay(uint32_t displayId, const C
 
     wrapper->callback = callback;
     __block bool success = false;
-    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    __block bool completed = false;
+    __block SCShareableContent *capturedContent = nil;
 
+    // macOS 26+ dispatches SCKit completion handlers to main queue.
+    // Call directly and pump run loop to process completions.
     [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
         if (error || !content) {
             NSLog(@"Error getting shareable content: %@", error.localizedDescription);
-            dispatch_semaphore_signal(semaphore);
+            completed = true;
             return;
         }
-
-        SCDisplay *targetDisplay = nil;
-        for (SCDisplay *display in content.displays) {
-            if (display.displayID == displayId) {
-                targetDisplay = display;
-                break;
-            }
-        }
-
-        if (!targetDisplay) {
-            NSLog(@"Could not find display with ID: %u", (unsigned int)displayId);
-            dispatch_semaphore_signal(semaphore);
-            return;
-        }
-
-        SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:targetDisplay
-                                                     excludingApplications:@[]
-                                                        exceptingWindows:@[]];
-
-        success = StartStreamWithFilter(wrapper, filter, config);
-        dispatch_semaphore_signal(semaphore);
+        // Retain content to avoid macOS 26.2 ARC bug (FB21107737)
+        capturedContent = [content retain];
+        completed = true;
     }];
 
-    dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+    RunLoopUntilComplete(&completed, 10.0);
+    
+    if (!capturedContent) {
+        return false;
+    }
+
+    SCDisplay *targetDisplay = nil;
+    for (SCDisplay *display in capturedContent.displays) {
+        if (display.displayID == displayId) {
+            targetDisplay = display;
+            break;
+        }
+    }
+
+    if (!targetDisplay) {
+        NSLog(@"Could not find display with ID: %u", (unsigned int)displayId);
+        [capturedContent release];
+        return false;
+    }
+
+    SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:targetDisplay
+                                                 excludingApplications:@[]
+                                                    exceptingWindows:@[]];
+
+    success = StartStreamWithFilter(wrapper, filter, config);
+    [capturedContent release];
     return success;
 }
 
