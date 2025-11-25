@@ -4,9 +4,14 @@ This directory contains focused examples demonstrating the key features of Scree
 
 ## Quick Start
 
-Run any example:
+Run any JavaScript example:
 ```bash
 node examples/1-basic-usage.js
+```
+
+Run the TypeScript example:
+```bash
+npx tsx examples/typescript-example.ts
 ```
 
 ## Examples Overview
@@ -119,6 +124,24 @@ node examples/5-stt-integration.js
 
 ---
 
+### 6. TypeScript Example (`typescript-example.ts`)
+**What it covers:**
+- Full type-safe usage with TypeScript
+- Importing types (`ApplicationInfo`, `AudioSample`, `CaptureInfo`)
+- Using `ErrorCode` enum for error handling
+- Type-safe event handlers
+- Permission verification with typed responses
+- Activity tracking with proper types
+- Stream API with TypeScript
+
+**Use this when:** You're building a TypeScript application and want type safety.
+
+```bash
+npx tsx examples/typescript-example.ts
+```
+
+---
+
 ## Example Progression
 
 **Recommended learning path:**
@@ -127,24 +150,25 @@ node examples/5-stt-integration.js
 2. Explore `2-stream-api.js` for stream-based processing
 3. Review `4-finding-apps.js` to learn app discovery
 4. Use `3-advanced-config.js` when you need optimization
+5. See `typescript-example.ts` for type-safe TypeScript usage
 
 ## Common Patterns
 
 ### Capture audio for 5 seconds and save to WAV
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
-const fs = require('fs');
+```typescript
+import fs from 'fs';
+import { AudioCapture, type AudioSample } from 'screencapturekit-audio-capture';
 
 const capture = new AudioCapture();
-const chunks = [];
+const chunks: Buffer[] = [];
 
-capture.on('audio', (sample) => {
+capture.on('audio', (sample: AudioSample) => {
   chunks.push(sample.data);
 });
 
 capture.on('stop', () => {
-  const combined = Buffer.concat(chunks);
-  const wav = AudioCapture.writeWav(combined, {
+  const combined: Buffer = Buffer.concat(chunks);
+  const wav: Buffer = AudioCapture.writeWav(combined, {
     sampleRate: 48000,
     channels: 2,
     format: 'float32'
@@ -157,15 +181,15 @@ setTimeout(() => capture.stopCapture(), 5000);
 ```
 
 ### Stream audio with custom processing
-```javascript
-const AudioCapture = require('screencapturekit-audio-capture');
-const { Transform } = require('stream');
+```typescript
+import { AudioCapture, type AudioSample } from 'screencapturekit-audio-capture';
+import { Transform, TransformCallback } from 'stream';
 
 const capture = new AudioCapture();
 
 const processor = new Transform({
   objectMode: true,
-  transform(sample, encoding, callback) {
+  transform(sample: AudioSample, encoding: string, callback: TransformCallback) {
     // Process sample
     console.log(`RMS: ${sample.rms}`);
     this.push(sample);
@@ -178,7 +202,7 @@ capture.createAudioStream('Spotify', { objectMode: true })
 ```
 
 ### Efficient configuration (minimize bandwidth)
-```javascript
+```typescript
 capture.startCapture('Spotify', {
   channels: 1,       // Mono: -50% data
   format: 'int16',   // Int16: -50% data
@@ -211,6 +235,6 @@ node examples/1-basic-usage.js
 
 ## Need Help?
 
-- Check the main README for API documentation
-- Review `TEST-REPORT.md` for implementation details
-- See `test-suite.js` for comprehensive testing examples
+- Check the main [README](../README.md) for full API documentation
+- Run `npm test` to verify your setup works correctly
+- See [typescript-example.ts](typescript-example.ts) for type-safe patterns
