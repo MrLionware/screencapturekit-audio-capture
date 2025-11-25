@@ -395,7 +395,7 @@ class AudioCapture extends EventEmitter {
     return apps.find(app =>
       app.applicationName.toLowerCase().includes(search) ||
       app.bundleIdentifier.toLowerCase().includes(search)
-    );
+    ) || null;
   }
 
   /**
@@ -538,7 +538,7 @@ class AudioCapture extends EventEmitter {
    */
   getApplicationByPid(processId) {
     const apps = this.getApplications();
-    return apps.find(app => app.processId === processId);
+    return apps.find(app => app.processId === processId) || null;
   }
 
   /**
