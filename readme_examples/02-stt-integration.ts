@@ -2,7 +2,22 @@ import { AudioCapture, STTConverter, type AudioSample, type PermissionStatus, ty
 import { pipeline } from 'stream';
 import { Writable } from 'stream';
 
+// Global error handlers for test suite
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err.message);
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('❌ Unhandled Rejection:', reason);
+    process.exit(1);
+});
+
 const capture = new AudioCapture();
+
+// Error handler
+capture.on('error', (err) => {
+    console.error('❌ Capture Error:', err.message);
+});
 
 // --- Approach 1: Simple approach with createSTTStream() ---
 console.log('--- Approach 1: Simple STT Stream ---');

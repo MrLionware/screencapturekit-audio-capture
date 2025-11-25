@@ -1,6 +1,21 @@
 import { AudioCapture, type ApplicationInfo } from '../src/index';
 
+// Global error handlers for test suite
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err.message);
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('❌ Unhandled Rejection:', reason);
+    process.exit(1);
+});
+
 const capture = new AudioCapture();
+
+// Error handler
+capture.on('error', (err) => {
+    console.error('❌ Capture Error:', err.message);
+});
 
 // Find a specific app
 const spotify: ApplicationInfo | null = capture.findApplication('Spotify');

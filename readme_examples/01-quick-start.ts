@@ -1,6 +1,21 @@
 import { AudioCapture, type AudioSample, type ApplicationInfo } from '../src/index';
 
+// Global error handlers for test suite
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err.message);
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('❌ Unhandled Rejection:', reason);
+    process.exit(1);
+});
+
 const capture = new AudioCapture();
+
+// Error handler
+capture.on('error', (err) => {
+    console.error('❌ Capture Error:', err.message);
+});
 
 // List available applications
 const apps: ApplicationInfo[] = capture.getApplications();
@@ -31,7 +46,12 @@ capture.on('audio', (sample: AudioSample) => {
     console.log(`Volume: ${AudioCapture.rmsToDb(sample.rms).toFixed(1)} dB`);
 });
 
-capture.startCapture(targetApp.processId);
+try {
+    capture.startCapture(targetApp.processId);
+} catch (err) {
+    console.error('❌ Failed to start capture:', (err as Error).message);
+    process.exit(1);
+}
 
 // Stop after 10 seconds
 setTimeout(() => {

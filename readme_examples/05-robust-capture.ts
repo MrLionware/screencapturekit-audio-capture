@@ -1,5 +1,15 @@
 import { AudioCapture, AudioCaptureError, ErrorCode, type AudioSample, type ApplicationInfo, type CaptureStatus } from '../src/index';
 
+// Global error handlers for test suite
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err.message);
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('❌ Unhandled Rejection:', reason);
+    process.exit(1);
+});
+
 class RobustAudioCapture {
     private appName: string;
     private capture: AudioCapture;

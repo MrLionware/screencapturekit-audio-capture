@@ -709,16 +709,9 @@ export interface LoadSDKWithMockOptions {
 
 /**
  * Load the SDK with a mocked native ScreenCaptureKit addon
- * Note: Uses sdk.js (the original JS implementation) for VM-based mocking.
- * The TypeScript source compiles to dist/ but tests validate behavior via sdk.js
- * which maintains the same API contract.
+ * Uses Node's module cache to inject a mock native module before loading the SDK.
  */
 export function loadSDKWithMock(options: LoadSDKWithMockOptions = {}): SDKExports {
-  // Use sdk.js for VM-based testing as it can be loaded and executed in isolation
-  // The TypeScript dist/ output has the same API but sdk.js is more suitable for VM mocking
-  const sdkPath = path.resolve(__dirname, '../../sdk.js');
-  const code = fs.readFileSync(sdkPath, 'utf8');
-
   const nativeMock = options.nativeMock || {
     ScreenCaptureKit: class MockScreenCaptureKit {
       getAvailableApps(): any[] { return []; }
@@ -727,32 +720,43 @@ export function loadSDKWithMock(options: LoadSDKWithMockOptions = {}): SDKExport
     }
   };
 
-  // Create a mock require function that intercepts './index'
-  const requireMock = (id: string): any => {
-    if (id === './index') {
-      return nativeMock;
-    }
-    return require(id);
+  // Clear any cached modules to ensure fresh load
+  const distPath = path.resolve(__dirname, '../../dist');
+  const nativePath = path.resolve(distPath, 'native.js');
+  const audioCaptturePath = path.resolve(distPath, 'audio-capture.js');
+  const audioStreamPath = path.resolve(distPath, 'audio-stream.js');
+  const sttConverterPath = path.resolve(distPath, 'stt-converter.js');
+  const errorsPath = path.resolve(distPath, 'errors.js');
+  const indexPath = path.resolve(distPath, 'index.js');
+
+  // Clear module cache for all SDK modules
+  delete require.cache[nativePath];
+  delete require.cache[audioCaptturePath];
+  delete require.cache[audioStreamPath];
+  delete require.cache[sttConverterPath];
+  delete require.cache[errorsPath];
+  delete require.cache[indexPath];
+
+  // Pre-populate the cache with the mock native module
+  require.cache[nativePath] = {
+    id: nativePath,
+    filename: nativePath,
+    loaded: true,
+    exports: {
+      nativeAddon: nativeMock,
+      ScreenCaptureKit: nativeMock.ScreenCaptureKit,
+    },
+  } as NodeJS.Module;
+
+  // Now load the SDK - it will use the mocked native module
+  const sdk = require('../../dist/index');
+
+  return {
+    AudioCapture: sdk.AudioCapture,
+    AudioStream: sdk.AudioStream,
+    STTConverter: sdk.STTConverter,
+    AudioCaptureError: sdk.AudioCaptureError,
+    ErrorCode: sdk.ErrorCode,
+    ErrorCodes: sdk.ErrorCodes,
   };
-
-  const module = { exports: {} };
-  const context: any = {
-    require: requireMock,
-    module,
-    exports: module.exports,
-    console,
-    process,
-    Buffer,
-    setTimeout,
-    clearTimeout,
-    Float32Array,
-    Int16Array,
-    Error,
-    Math
-  };
-
-  vm.createContext(context);
-  vm.runInContext(code, context);
-
-  return module.exports as SDKExports;
 }

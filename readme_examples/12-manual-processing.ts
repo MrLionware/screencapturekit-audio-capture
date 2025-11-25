@@ -1,6 +1,21 @@
 import { AudioCapture, type AudioSample } from '../src/index';
 
+// Global error handlers for test suite
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err.message);
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('❌ Unhandled Rejection:', reason);
+    process.exit(1);
+});
+
 const capture = new AudioCapture();
+
+// Error handler
+capture.on('error', (err) => {
+    console.error('❌ Capture Error:', err.message);
+});
 
 // Find app - use TARGET_APP env var if set
 const appList = process.env.TARGET_APP ? [process.env.TARGET_APP] : undefined;
@@ -32,7 +47,12 @@ capture.on('audio', (sample: AudioSample) => {
     console.log(`Samples: ${float32.length}, Avg: ${avgAmplitude.toFixed(4)}, Range: [${min.toFixed(4)}, ${max.toFixed(4)}]`);
 });
 
-capture.startCapture(app.processId);
+try {
+    capture.startCapture(app.processId);
+} catch (err) {
+    console.error('❌ Failed to start capture:', (err as Error).message);
+    process.exit(1);
+}
 
 setTimeout(() => {
     console.log('Stopping manual processing...');

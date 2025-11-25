@@ -122,6 +122,69 @@ console.log(JSON.stringify(apps.map(a => a.applicationName)));
     export TARGET_APP="${app_names[$((selection-1))]}"
     echo ""
     echo "✅ Selected: $TARGET_APP"
+    
+    # Store app names for second app selection
+    AVAILABLE_APP_NAMES=("${app_names[@]}")
+}
+
+# Function to select a second app for multi-app examples
+select_second_app_interactive() {
+    echo ""
+    echo "========================================="
+    echo "📱 Select a SECOND app for multi-app tests:"
+    echo "========================================="
+    
+    # Get list of apps again
+    local apps_json=$(node -e "
+const {AudioCapture} = require('$PROJECT_DIR/dist');
+const capture = new AudioCapture();
+const apps = capture.getAudioApps();
+console.log(JSON.stringify(apps.map(a => a.applicationName)));
+" 2>/dev/null)
+    
+    if [ -z "$apps_json" ] || [ "$apps_json" = "[]" ]; then
+        echo "⚠️  No other audio apps found. Multi-app tests will use fallback."
+        return
+    fi
+    
+    # Parse JSON array and display numbered list (excluding first app)
+    local i=1
+    local app_names=()
+    while IFS= read -r app; do
+        if [ "$app" != "$TARGET_APP" ]; then
+            app_names+=("$app")
+            echo "  $i) $app"
+            ((i++))
+        fi
+    done < <(echo "$apps_json" | node -e "JSON.parse(require('fs').readFileSync(0,'utf8')).forEach(a => console.log(a))")
+    
+    if [ ${#app_names[@]} -eq 0 ]; then
+        echo "⚠️  No other audio apps available. Multi-app tests will use fallback."
+        return
+    fi
+    
+    echo ""
+    echo "  0) Skip (use fallback for multi-app tests)"
+    echo ""
+    read -p "Select second app (1-$((i-1)), or 0 to skip): " selection
+    
+    if [ "$selection" = "0" ] || [ -z "$selection" ]; then
+        echo "Skipped. Multi-app tests will use fallback."
+        return
+    fi
+    
+    # Validate selection
+    if ! [[ "$selection" =~ ^[0-9]+$ ]] || [ "$selection" -lt 1 ] || [ "$selection" -gt $((i-1)) ]; then
+        echo "⚠️  Invalid selection. Multi-app tests will use fallback."
+        return
+    fi
+    
+    # Get selected second app name
+    export TARGET_APP_2="${app_names[$((selection-1))]}"
+    export TARGET_APPS="$TARGET_APP,$TARGET_APP_2"
+    echo ""
+    echo "✅ Second app selected: $TARGET_APP_2"
+    echo "✅ TARGET_APPS=$TARGET_APPS"
 }
 
 # Function to run a single test and track results
@@ -235,9 +298,141 @@ if [ -n "$1" ]; then
     echo "========================================="
     echo "🎯 Target app: $TARGET_APP"
     echo "========================================="
+    
+    # Check for second app argument
+    if [ -n "$2" ]; then
+        export TARGET_APP_2="$2"
+        export TARGET_APPS="$TARGET_APP,$TARGET_APP_2"
+        echo "🎯 Second app: $TARGET_APP_2"
+        echo "🎯 TARGET_APPS: $TARGET_APPS"
+        echo "========================================="
+    fi
 else
     select_app_interactive
 fi
+
+# If no second app specified, ask interactively
+if [ -z "$TARGET_APPS" ]; then
+    select_second_app_interactive
+fi
+
+# Select window for window capture tests
+select_window_interactive() {
+    echo ""
+    echo "========================================="
+    echo "🪟  Select a WINDOW for window capture tests:"
+    echo "========================================="
+    
+    local windows_json=$(node -e "
+const {AudioCapture} = require('$PROJECT_DIR/dist');
+const capture = new AudioCapture();
+const windows = capture.getWindows().filter(w => w.title && w.title.length > 0).slice(0, 20);
+console.log(JSON.stringify(windows.map(w => ({id: w.windowId, app: w.owningApplicationName || 'Unknown', title: w.title}))));
+" 2>/dev/null)
+    
+    if [ -z "$windows_json" ] || [ "$windows_json" = "[]" ]; then
+        echo "⚠️  No windows found. Window tests will use auto-selection."
+        return
+    fi
+    
+    local i=1
+    local window_ids=()
+    while IFS= read -r line; do
+        local id=$(echo "$line" | cut -d'|' -f1)
+        local app=$(echo "$line" | cut -d'|' -f2)
+        local title=$(echo "$line" | cut -d'|' -f3)
+        window_ids+=("$id")
+        # Truncate title if too long
+        if [ ${#title} -gt 40 ]; then
+            title="${title:0:37}..."
+        fi
+        echo "  $i) [$app] $title"
+        ((i++))
+    done < <(echo "$windows_json" | node -e "
+const data = JSON.parse(require('fs').readFileSync(0,'utf8'));
+data.forEach(w => console.log(w.id + '|' + w.app + '|' + w.title));
+")
+    
+    echo ""
+    echo "  0) Skip (use auto-selection)"
+    echo ""
+    read -p "Select window (1-$((i-1)), or 0 to skip): " selection
+    
+    if [ "$selection" = "0" ] || [ -z "$selection" ]; then
+        echo "Skipped. Window tests will use auto-selection."
+        return
+    fi
+    
+    if ! [[ "$selection" =~ ^[0-9]+$ ]] || [ "$selection" -lt 1 ] || [ "$selection" -gt $((i-1)) ]; then
+        echo "⚠️  Invalid selection. Window tests will use auto-selection."
+        return
+    fi
+    
+    export TARGET_WINDOW="${window_ids[$((selection-1))]}"
+    echo ""
+    echo "✅ Window selected: ID $TARGET_WINDOW"
+}
+
+# Select display for display capture tests
+select_display_interactive() {
+    echo ""
+    echo "========================================="
+    echo "🖥️  Select a DISPLAY for display capture tests:"
+    echo "========================================="
+    
+    local displays_json=$(node -e "
+const {AudioCapture} = require('$PROJECT_DIR/dist');
+const capture = new AudioCapture();
+const displays = capture.getDisplays();
+console.log(JSON.stringify(displays.map(d => ({id: d.displayId, width: d.width, height: d.height, main: d.isMainDisplay}))));
+" 2>/dev/null)
+    
+    if [ -z "$displays_json" ] || [ "$displays_json" = "[]" ]; then
+        echo "⚠️  No displays found. Display tests will use auto-selection."
+        return
+    fi
+    
+    local i=1
+    local display_ids=()
+    while IFS= read -r line; do
+        local id=$(echo "$line" | cut -d'|' -f1)
+        local res=$(echo "$line" | cut -d'|' -f2)
+        local main=$(echo "$line" | cut -d'|' -f3)
+        display_ids+=("$id")
+        local main_badge=""
+        if [ "$main" = "true" ]; then
+            main_badge=" ★ Main"
+        fi
+        echo "  $i) Display $id - ${res}${main_badge}"
+        ((i++))
+    done < <(echo "$displays_json" | node -e "
+const data = JSON.parse(require('fs').readFileSync(0,'utf8'));
+data.forEach(d => console.log(d.id + '|' + d.width + 'x' + d.height + '|' + d.main));
+")
+    
+    echo ""
+    echo "  0) Skip (use auto-selection)"
+    echo ""
+    read -p "Select display (1-$((i-1)), or 0 to skip): " selection
+    
+    if [ "$selection" = "0" ] || [ -z "$selection" ]; then
+        echo "Skipped. Display tests will use auto-selection."
+        return
+    fi
+    
+    if ! [[ "$selection" =~ ^[0-9]+$ ]] || [ "$selection" -lt 1 ] || [ "$selection" -gt $((i-1)) ]; then
+        echo "⚠️  Invalid selection. Display tests will use auto-selection."
+        return
+    fi
+    
+    export TARGET_DISPLAY="${display_ids[$((selection-1))]}"
+    echo ""
+    echo "✅ Display selected: ID $TARGET_DISPLAY"
+}
+
+# Ask user to select window and display
+select_window_interactive
+select_display_interactive
 
 echo ""
 echo "🔊 Checking if \"$TARGET_APP\" is producing audio (3 seconds)..."
@@ -277,8 +472,17 @@ esac
 echo "========================================="
 echo -e "🚀 ${BOLD}Starting Test Suite${NC}"
 echo "========================================="
-echo -e "Target App: ${CYAN}$TARGET_APP${NC}"
-echo -e "Log Dir:    ${CYAN}$LOG_DIR${NC}"
+echo -e "Target App:   ${CYAN}$TARGET_APP${NC}"
+if [ -n "$TARGET_APPS" ]; then
+    echo -e "Multi-App:    ${CYAN}$TARGET_APPS${NC}"
+fi
+if [ -n "$TARGET_WINDOW" ]; then
+    echo -e "Window ID:    ${CYAN}$TARGET_WINDOW${NC}"
+fi
+if [ -n "$TARGET_DISPLAY" ]; then
+    echo -e "Display ID:   ${CYAN}$TARGET_DISPLAY${NC}"
+fi
+echo -e "Log Dir:      ${CYAN}$LOG_DIR${NC}"
 echo "========================================="
 echo ""
 
@@ -295,6 +499,13 @@ run_test "09-volume-monitor"   "readme_examples/09-volume-monitor.ts"
 run_test "10-int16-capture"    "readme_examples/10-int16-capture.ts"
 run_test "11-find-apps"        "readme_examples/11-find-apps.ts"
 run_test "12-manual-processing" "readme_examples/12-manual-processing.ts"
+run_test "13-multi-app-capture" "readme_examples/13-multi-app-capture.ts"
+run_test "14-per-app-streams" "readme_examples/14-per-app-streams.ts"
+run_test "15-window-capture" "readme_examples/15-window-capture.ts"
+run_test "16-display-capture" "readme_examples/16-display-capture.ts"
+run_test "17-multi-window-capture" "readme_examples/17-multi-window-capture.ts"
+run_test "18-multi-display-capture" "readme_examples/18-multi-display-capture.ts"
+run_test "19-advanced-methods" "readme_examples/19-advanced-methods.ts"
 
 # Print summary and exit with appropriate code
 print_summary

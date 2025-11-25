@@ -1,7 +1,22 @@
 import { AudioCapture, AudioStream, type CaptureStatus } from '../src/index';
 import { pipeline, Writable } from 'stream';
 
+// Global error handlers for test suite
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err.message);
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('❌ Unhandled Rejection:', reason);
+    process.exit(1);
+});
+
 const capture = new AudioCapture();
+
+// Error handler
+capture.on('error', (err) => {
+    console.error('❌ Capture Error:', err.message);
+});
 
 // Mock streams
 const yourVoiceProcessor = new Writable({

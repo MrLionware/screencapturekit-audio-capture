@@ -2,7 +2,22 @@ import { AudioCapture, type AudioSample } from '../src/index';
 import fs from 'fs';
 import path from 'path';
 
+// Global error handlers for test suite
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err.message);
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('❌ Unhandled Rejection:', reason);
+    process.exit(1);
+});
+
 const capture = new AudioCapture();
+
+// Error handler
+capture.on('error', (err) => {
+    console.error('❌ Capture Error:', err.message);
+});
 const chunks: Buffer[] = [];
 
 // Find an app
@@ -17,11 +32,16 @@ if (!app) {
 console.log(`Recording from: ${app.applicationName}`);
 
 // Efficient configuration for recording
-capture.startCapture(app.processId, {
-    format: 'int16',       // 50% smaller than float32
-    channels: 2,           // Preserve stereo
-    bufferSize: 4096       // Larger buffer = lower CPU
-});
+try {
+    capture.startCapture(app.processId, {
+        format: 'int16',       // 50% smaller than float32
+        channels: 2,           // Preserve stereo
+        bufferSize: 4096       // Larger buffer = lower CPU
+    });
+} catch (err) {
+    console.error('❌ Failed to start capture:', (err as Error).message);
+    process.exit(1);
+}
 
 capture.on('audio', (sample: AudioSample) => {
     chunks.push(sample.data);

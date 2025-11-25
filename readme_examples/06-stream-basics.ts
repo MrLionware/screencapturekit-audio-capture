@@ -3,7 +3,22 @@ import { pipeline } from 'stream';
 import fs from 'fs';
 import path from 'path';
 
+// Global error handlers for test suite
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err.message);
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('❌ Unhandled Rejection:', reason);
+    process.exit(1);
+});
+
 const capture = new AudioCapture();
+
+// Error handler
+capture.on('error', (err) => {
+    console.error('❌ Capture Error:', err.message);
+});
 
 // Find an app - use TARGET_APP env var if set
 const appList = process.env.TARGET_APP ? [process.env.TARGET_APP] : ['Spotify', 'Music', 'Chrome'];
