@@ -200,7 +200,7 @@ run_test() {
     # Run the test and capture output
     local output
     local exit_code
-    output=$(TARGET_APP="$TARGET_APP" npx ts-node --project readme_examples/tsconfig.json "$test_file" 2>&1)
+    output=$(TARGET_APP="$TARGET_APP" npx tsx "$test_file" 2>&1)
     exit_code=$?
     
     local end_time=$(date +%s)
@@ -287,7 +287,7 @@ print_summary() {
         echo "=============================================="
         echo ""
         echo "To debug a failed test, check the log file or run it directly:"
-        echo -e "  ${CYAN}TARGET_APP=\"$TARGET_APP\" npx ts-node --project readme_examples/tsconfig.json readme_examples/<example>.ts${NC}"
+        echo -e "  ${CYAN}TARGET_APP=\"$TARGET_APP\" npx tsx readme_examples/<example>.ts${NC}"
         return 1
     fi
 }
@@ -506,6 +506,7 @@ run_test "16-display-capture" "readme_examples/16-display-capture.ts"
 run_test "17-multi-window-capture" "readme_examples/17-multi-window-capture.ts"
 run_test "18-multi-display-capture" "readme_examples/18-multi-display-capture.ts"
 run_test "19-advanced-methods" "readme_examples/19-advanced-methods.ts"
+run_test "20-capture-service" "readme_examples/20-capture-service.ts"
 
 # Print summary and exit with appropriate code
 print_summary
