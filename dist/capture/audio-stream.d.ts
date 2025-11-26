@@ -4,7 +4,7 @@
  */
 import { Readable } from 'stream';
 import type { AudioCapture } from './audio-capture';
-import type { AppIdentifier, CaptureInfo, AudioStreamOptions } from './types';
+import type { AppIdentifier, CaptureInfo, AudioStreamOptions } from '../types';
 /**
  * Readable stream for audio capture
  * Provides a stream-based alternative to the EventEmitter API

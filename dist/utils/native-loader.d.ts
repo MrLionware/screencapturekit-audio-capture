@@ -4,4 +4,4 @@
  */
 export declare const nativeAddon: any;
 export declare const ScreenCaptureKit: any;
-//# sourceMappingURL=native.d.ts.map
+//# sourceMappingURL=native-loader.d.ts.map

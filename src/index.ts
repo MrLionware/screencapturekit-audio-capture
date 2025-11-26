@@ -5,15 +5,20 @@
  * @packageDocumentation
  */
 
-// Export main classes
-export { AudioCapture } from './audio-capture';
-export { AudioStream } from './audio-stream';
-export { STTConverter } from './stt-converter';
+// Core capture functionality
+export { AudioCapture, AudioStream } from './capture';
 
-// Export errors
+// Multi-process service architecture
+export { AudioCaptureServer, AudioCaptureClient } from './service';
+export type { ServerOptions, CaptureSession, ClientOptions, RemoteAudioSample } from './service';
+
+// Utilities
+export { STTConverter, ScreenCaptureKit } from './utils';
+
+// Errors
 export { AudioCaptureError, ErrorCode, ErrorCodes } from './errors';
 
-// Export all types
+// Types
 export type {
   ApplicationInfo,
   WindowInfo,
@@ -41,8 +46,5 @@ export type {
   AppIdentifier,
 } from './types';
 
-// Export native binding
-export { ScreenCaptureKit } from './native';
-
 // Default export for convenience
-export { AudioCapture as default } from './audio-capture';
+export { AudioCapture as default } from './capture';

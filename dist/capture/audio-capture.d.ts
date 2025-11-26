@@ -4,8 +4,8 @@
  */
 import { EventEmitter } from 'events';
 import { AudioStream } from './audio-stream';
-import { STTConverter } from './stt-converter';
-import type { ApplicationInfo, WindowInfo, DisplayInfo, CaptureInfo, CaptureOptions, GetApplicationsOptions, GetWindowsOptions, GetAudioAppsOptions, SelectAppOptions, ActivityTrackingOptions, ActivityInfo, PermissionStatus, CaptureStatus, AudioStreamOptions, STTStreamOptions, WavOptions, AppIdentifier, MultiAppCaptureOptions, MultiAppIdentifier, MultiWindowCaptureOptions, MultiWindowIdentifier, MultiDisplayCaptureOptions, MultiDisplayIdentifier } from './types';
+import { STTConverter } from '../utils/stt-converter';
+import type { ApplicationInfo, WindowInfo, DisplayInfo, CaptureInfo, CaptureOptions, GetApplicationsOptions, GetWindowsOptions, GetAudioAppsOptions, SelectAppOptions, ActivityTrackingOptions, ActivityInfo, PermissionStatus, CaptureStatus, AudioStreamOptions, STTStreamOptions, WavOptions, AppIdentifier, MultiAppCaptureOptions, MultiAppIdentifier, MultiWindowCaptureOptions, MultiWindowIdentifier, MultiDisplayCaptureOptions, MultiDisplayIdentifier } from '../types';
 /**
  * Main AudioCapture class
  * High-level API for capturing audio from macOS applications

@@ -4,7 +4,7 @@
  */
 
 import { Transform, TransformCallback, TransformOptions } from 'stream';
-import type { ApplicationInfo, AudioFormat, AudioSample } from './types';
+import type { ApplicationInfo, AudioFormat, AudioSample } from '../types';
 
 /**
  * Options for creating an STTConverter

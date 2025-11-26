@@ -5,8 +5,8 @@
 
 import { EventEmitter } from 'events';
 import { AudioStream } from './audio-stream';
-import { STTConverter } from './stt-converter';
-import { AudioCaptureError, ErrorCode } from './errors';
+import { STTConverter } from '../utils/stt-converter';
+import { AudioCaptureError, ErrorCode } from '../errors';
 import type {
   ApplicationInfo,
   WindowInfo,
@@ -39,7 +39,7 @@ import type {
   MultiDisplayCaptureOptions,
   MultiDisplayIdentifier,
   CaptureTargetType,
-} from './types';
+} from '../types';
 
 /**
  * Native ScreenCaptureKit binding interface
@@ -136,7 +136,7 @@ export class AudioCapture extends EventEmitter {
   constructor() {
     super();
     // Import the native binding
-    const { ScreenCaptureKit: NativeScreenCaptureKit } = require('./native');
+    const { ScreenCaptureKit: NativeScreenCaptureKit } = require('../utils/native-loader');
     this.captureKit = new NativeScreenCaptureKit();
   }
 

@@ -1,5 +1,5 @@
 #include <napi.h>
-#include "screencapturekit_wrapper.h"
+#include "wrapper.h"
 #include <memory>
 #include <map>
 

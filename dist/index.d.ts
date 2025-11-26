@@ -4,11 +4,11 @@
  *
  * @packageDocumentation
  */
-export { AudioCapture } from './audio-capture';
-export { AudioStream } from './audio-stream';
-export { STTConverter } from './stt-converter';
+export { AudioCapture, AudioStream } from './capture';
+export { AudioCaptureServer, AudioCaptureClient } from './service';
+export type { ServerOptions, CaptureSession, ClientOptions, RemoteAudioSample } from './service';
+export { STTConverter, ScreenCaptureKit } from './utils';
 export { AudioCaptureError, ErrorCode, ErrorCodes } from './errors';
 export type { ApplicationInfo, WindowInfo, WindowFrame, DisplayInfo, AudioFormat, AudioSample, NativeAudioSample, CaptureTargetType, CaptureInfo, CaptureOptions, NativeCaptureConfig, GetApplicationsOptions, GetWindowsOptions, GetAudioAppsOptions, SelectAppOptions, ActivityTrackingOptions, ProcessActivityInfo, ActivityInfo, PermissionStatus, CaptureStatus, AudioStreamOptions, STTStreamOptions, WavOptions, AppIdentifier, } from './types';
-export { ScreenCaptureKit } from './native';
-export { AudioCapture as default } from './audio-capture';
+export { AudioCapture as default } from './capture';
 //# sourceMappingURL=index.d.ts.map

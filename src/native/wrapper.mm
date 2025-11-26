@@ -1,4 +1,4 @@
-#import "screencapturekit_wrapper.h"
+#import "wrapper.h"
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
@@ -492,7 +492,7 @@ std::vector<WindowInfo> ScreenCaptureKitWrapper::getAvailableWindows() {
                 info.layer = (int)window.windowLayer;
                 info.onScreen = window.isOnScreen;
                 BOOL isActive = NO;
-                if ([window respondsToSelector:@selector(isActive)]) {
+                if (@available(macOS 13.1, *)) {
                     isActive = window.isActive;
                 }
                 info.active = isActive;

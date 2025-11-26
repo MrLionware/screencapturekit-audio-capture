@@ -16,7 +16,7 @@ try {
   // 1. prebuilds/ for matching prebuilt binaries
   // 2. build/Release/ for compiled binaries
   // 3. build/Debug/ as fallback
-  addon = nodeGypBuild(path.resolve(__dirname, '..'));
+  addon = nodeGypBuild(path.resolve(__dirname, '../..'));
 } catch (error) {
   throw new Error(
     `Could not load the native addon. If you're developing, run "npm run build:native" to compile. ` +

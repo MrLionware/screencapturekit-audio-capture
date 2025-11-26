@@ -18,7 +18,7 @@ try {
     // 1. prebuilds/ for matching prebuilt binaries
     // 2. build/Release/ for compiled binaries
     // 3. build/Debug/ as fallback
-    addon = nodeGypBuild(path_1.default.resolve(__dirname, '..'));
+    addon = nodeGypBuild(path_1.default.resolve(__dirname, '../..'));
 }
 catch (error) {
     throw new Error(`Could not load the native addon. If you're developing, run "npm run build:native" to compile. ` +
@@ -26,4 +26,4 @@ catch (error) {
 }
 exports.nativeAddon = addon;
 exports.ScreenCaptureKit = addon.ScreenCaptureKit;
-//# sourceMappingURL=native.js.map
+//# sourceMappingURL=native-loader.js.map

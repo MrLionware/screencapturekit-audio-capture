@@ -7,8 +7,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AudioCapture = void 0;
 const events_1 = require("events");
 const audio_stream_1 = require("./audio-stream");
-const stt_converter_1 = require("./stt-converter");
-const errors_1 = require("./errors");
+const stt_converter_1 = require("../utils/stt-converter");
+const errors_1 = require("../errors");
 /**
  * Main AudioCapture class
  * High-level API for capturing audio from macOS applications
@@ -32,7 +32,7 @@ class AudioCapture extends events_1.EventEmitter {
         this._activityTrackingEnabled = false;
         this._activityDecayMs = 30000; // Remove apps from cache after 30s of inactivity
         // Import the native binding
-        const { ScreenCaptureKit: NativeScreenCaptureKit } = require('./native');
+        const { ScreenCaptureKit: NativeScreenCaptureKit } = require('../utils/native-loader');
         this.captureKit = new NativeScreenCaptureKit();
     }
     // ==================== Application Discovery ====================
