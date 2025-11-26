@@ -1,6 +1,6 @@
 /**
  * Native addon loader for ScreenCaptureKit
- * Handles loading the compiled .node addon from build directory
+ * Uses node-gyp-build to load prebuilt binaries or fall back to compilation
  */
 export declare const nativeAddon: any;
 export declare const ScreenCaptureKit: any;

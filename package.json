@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "postinstall": "npm run build:native",
+    "install": "node-gyp-build",
     "build": "npm run build:native && npm run build:ts",
     "build:native": "node-gyp rebuild",
     "build:ts": "tsc -p tsconfig.json",
@@ -17,6 +17,8 @@
     "test:edge-cases": "tsx --test 'tests/edge-cases/*.test.ts'",
     "test:watch": "tsx --test --watch 'tests/**/*.test.ts'",
     "test:readme": "bash readme_examples/run_all.sh",
+    "prebuild": "prebuildify --napi --strip",
+    "prebuild:all": "prebuildify --napi --strip --arch x64 && prebuildify --napi --strip --arch arm64",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:tests": "tsc --project tests/tsconfig.json"
@@ -58,17 +60,20 @@
   "files": [
     "src/",
     "dist/",
+    "prebuilds/",
     "binding.gyp",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
   ],
   "dependencies": {
-    "node-addon-api": "^7.0.0"
+    "node-addon-api": "^7.0.0",
+    "node-gyp-build": "^4.8.0"
   },
   "devDependencies": {
     "@types/node": "^20.19.25",
     "node-gyp": "^10.0.0",
+    "prebuildify": "^6.0.0",
     "rimraf": "^5.0.10",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.6",

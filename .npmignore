@@ -9,9 +9,11 @@ docs/
 .claude
 readme_examples/
 
-# Build artifacts (will be rebuilt on user's machine)
+# Build artifacts (compiled on user's machine if no prebuild)
 build/
-*.node
+
+# Prebuilds are explicitly included (don't ignore)
+!prebuilds/
 
 # Dependencies (will be installed on user's machine)
 node_modules/
