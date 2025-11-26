@@ -15,12 +15,14 @@ Capture real-time audio from any macOS application with a simple, event-driven A
 - [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
+- [Project Structure](#project-structure)
 - [Quick Start](#quick-start)
 - [Quick Integration Guide](#quick-integration-guide)
 - [Module Exports](#module-exports)
 - [Testing](#testing)
 - [Stream-Based API](#stream-based-api)
 - [API Reference](#api-reference)
+- [Multi-Process Capture Service](#multi-process-capture-service)
 - [Events Reference](#events-reference)
 - [TypeScript](#typescript)
 - [Working with Audio Data](#working-with-audio-data)
@@ -35,16 +37,12 @@ Capture real-time audio from any macOS application with a simple, event-driven A
 
 ## Features
 
-- 🎵 **Per-App Audio Capture** - Isolate audio from specific applications
-- 🎭 **Multi-Source Capture** - Capture from multiple apps, windows, or displays simultaneously
-- ⚡ **Real-Time Streaming** - Low-latency audio callbacks
-- 🎯 **Dual API Design** - Event-driven or Stream-based (your choice!)
-- 🪟 **Window & Display Targeting** - Capture a single window or full display audio
-- 🌊 **Node.js Streams** - Pipe audio through standard Readable streams
-- 📊 **Audio Analysis** - Built-in RMS, peak, and dB calculations
-- 💾 **WAV File Export** - Simple helper to save audio as standard WAV files
-- 🔒 **Memory Safe** - No crashes, proper resource cleanup
-- 📘 **TypeScript-First** - Written in TypeScript with full type definitions
+- 🎵 **Per-App Audio Capture** - Isolate audio from specific applications, windows, or displays
+- 🎭 **Multi-Source Capture** - Capture from multiple apps simultaneously with mixed output
+- ⚡ **Real-Time Streaming** - Low-latency callbacks with Event or Stream-based APIs
+- 🔄 **Multi-Process Service** - Server/client architecture for sharing audio across processes
+- 📊 **Audio Utilities** - Built-in RMS/peak/dB analysis and WAV file export
+- 📘 **TypeScript-First** - Full type definitions with memory-safe resource cleanup
 
 ## Requirements
 
@@ -58,7 +56,7 @@ Capture real-time audio from any macOS application with a simple, event-driven A
 npm install screencapturekit-audio-capture
 ```
 
-**Prebuilt binaries are included** — no compilation or Xcode required for most users.
+**Prebuilt binaries are included** — no compilation or Xcode required for Apple Silicon M series (ARM64) machines.
 
 ### Fallback Compilation
 
@@ -91,6 +89,49 @@ When installed from npm, the package includes:
 
 See `npm ls screencapturekit-audio-capture` for installation location.
 
+## Project Structure
+
+```
+screencapturekit-audio-capture/
+├── src/                        # Source code
+│   ├── capture/                # Core audio capture functionality
+│   │   ├── index.ts            # Barrel exports
+│   │   ├── audio-capture.ts    # Main AudioCapture class
+│   │   └── audio-stream.ts     # Readable stream wrapper
+│   │
+│   ├── native/                 # Native C++/Objective-C++ code
+│   │   ├── addon.mm            # Node.js N-API bindings
+│   │   ├── wrapper.h           # C++ header
+│   │   └── wrapper.mm          # ScreenCaptureKit implementation
+│   │
+│   ├── service/                # Multi-process capture service
+│   │   ├── index.ts            # Barrel exports
+│   │   ├── server.ts           # WebSocket server for shared capture
+│   │   └── client.ts           # WebSocket client
+│   │
+│   ├── utils/                  # Utility modules
+│   │   ├── index.ts            # Barrel exports
+│   │   ├── stt-converter.ts    # Speech-to-text transform stream
+│   │   └── native-loader.ts    # Native addon loader
+│   │
+│   ├── types.ts                # TypeScript type definitions
+│   ├── errors.ts               # Error classes and codes
+│   └── index.ts                # Main package exports
+│
+├── dist/                       # Compiled JavaScript output
+├── tests/                      # Test suites (unit, integration, edge-cases)
+├── readme_examples/            # Runnable example scripts
+├── prebuilds/                  # Prebuilt native binaries
+├── build/                      # Native compilation output
+│
+├── package.json                # Package manifest
+├── tsconfig.json               # TypeScript configuration
+├── binding.gyp                 # Native addon build configuration
+├── CHANGELOG.md                # Version history
+├── LICENSE                     # MIT License
+└── README.md                   # This file
+```
+
 ## Quick Start
 
 > 📁 **See [`readme_examples/01-quick-start.ts`](readme_examples/01-quick-start.ts) for runnable code**
@@ -122,6 +163,7 @@ Common patterns for integrating audio capture into your application:
 | **Recording** | [`04-audio-recording.ts`](readme_examples/04-audio-recording.ts) | Capture to WAV file with efficient settings |
 | **Robust Capture** | [`05-robust-capture.ts`](readme_examples/05-robust-capture.ts) | Production error handling with fallbacks |
 | **Multi-App** | [`13-multi-app-capture.ts`](readme_examples/13-multi-app-capture.ts) | Capture game + Discord, Zoom + Music, etc. |
+| **Multi-Process** | [`20-capture-service.ts`](readme_examples/20-capture-service.ts) | Share audio across multiple processes |
 
 ### Key Configuration Patterns
 
@@ -160,6 +202,9 @@ Common patterns for integrating audio capture into your application:
 ```typescript
 import { AudioCapture, AudioCaptureError, ErrorCode } from 'screencapturekit-audio-capture';
 import type { AudioSample, ApplicationInfo } from 'screencapturekit-audio-capture';
+
+// Multi-process capture service (for sharing audio across processes)
+import { AudioCaptureServer, AudioCaptureClient } from 'screencapturekit-audio-capture';
 ```
 
 | Export | Description |
@@ -167,11 +212,13 @@ import type { AudioSample, ApplicationInfo } from 'screencapturekit-audio-captur
 | `AudioCapture` | High-level event-based API *(recommended)* |
 | `AudioStream` | Readable stream (via `createAudioStream()`) |
 | `STTConverter` | Transform stream for STT (via `createSTTStream()`) |
+| `AudioCaptureServer` | WebSocket server for shared capture *(multi-process)* |
+| `AudioCaptureClient` | WebSocket client to receive shared audio |
 | `AudioCaptureError` | Error class with codes and details |
 | `ErrorCode` | Error code enum for type-safe handling |
 | `ScreenCaptureKit` | Low-level native binding *(advanced)* |
 
-**Types:** `AudioSample`, `ApplicationInfo`, `WindowInfo`, `DisplayInfo`, `CaptureOptions`, `PermissionStatus`, `ActivityInfo`, and [more](#typescript).
+**Types:** `AudioSample`, `ApplicationInfo`, `WindowInfo`, `DisplayInfo`, `CaptureOptions`, `PermissionStatus`, `ActivityInfo`, `ServerOptions`, `ClientOptions`, and [more](#typescript).
 
 ## Testing
 
@@ -1046,6 +1093,168 @@ const isCapturing = captureKit.isCapturing();
 
 ---
 
+### Multi-Process Capture Service
+
+macOS ScreenCaptureKit only allows one process to capture audio at a time. If you need multiple processes to receive the same audio data, use the server/client architecture.
+
+> 📁 **See [`readme_examples/20-capture-service.ts`](readme_examples/20-capture-service.ts) for a complete example**
+
+#### When to Use
+
+| Scenario | Solution |
+|----------|----------|
+| Single app capturing audio | Use `AudioCapture` directly |
+| Multiple processes need same audio | Use `AudioCaptureServer` + `AudioCaptureClient` |
+| Electron main + renderer processes | Use server/client |
+| Microservices architecture | Use server/client |
+
+#### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  AudioCaptureServer                     │
+│  - Runs in one process                                  │
+│  - Handles actual ScreenCaptureKit capture              │
+│  - Broadcasts audio to all connected clients            │
+└─────────────────────────────────────────────────────────┘
+              │ WebSocket (ws://localhost:9123)
+              ▼
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│   Client 1  │  │   Client 2  │  │   Client N  │
+│  (Process A)│  │  (Process B)│  │  (Process N)│
+└─────────────┘  └─────────────┘  └─────────────┘
+```
+
+#### Server Usage
+
+```typescript
+import { AudioCaptureServer } from 'screencapturekit-audio-capture';
+
+const server = new AudioCaptureServer({
+  port: 9123,        // Default: 9123
+  host: 'localhost'  // Default: 'localhost'
+});
+
+// Start the server
+await server.start();
+
+// Server events
+server.on('clientConnected', (clientId) => console.log(`Client ${clientId} connected`));
+server.on('clientDisconnected', (clientId) => console.log(`Client ${clientId} disconnected`));
+server.on('captureStarted', (session) => console.log(`Capture started: ${session.id}`));
+server.on('captureStopped', () => console.log('Capture stopped'));
+server.on('captureError', (error) => console.error('Capture error:', error));
+
+// Stop the server
+await server.stop();
+```
+
+#### Server Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `start()` | `Promise<void>` | Start the WebSocket server |
+| `stop()` | `Promise<void>` | Stop server and disconnect all clients |
+| `getSession()` | `CaptureSession \| null` | Get current capture session info |
+| `getClientCount()` | `number` | Get number of connected clients |
+
+#### Server Events
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `'clientConnected'` | `clientId: string` | Client connected |
+| `'clientDisconnected'` | `clientId: string` | Client disconnected |
+| `'captureStarted'` | `CaptureSession` | Capture session started |
+| `'captureStopped'` | - | Capture session stopped |
+| `'captureError'` | `Error` | Capture error occurred |
+
+#### Client Usage
+
+```typescript
+import { AudioCaptureClient } from 'screencapturekit-audio-capture';
+
+const client = new AudioCaptureClient({
+  url: 'ws://localhost:9123',  // Default
+  autoReconnect: true,         // Default: true
+  reconnectDelay: 1000,        // Default: 1000ms
+  maxReconnectAttempts: 10     // Default: 10
+});
+
+// Connect to server
+await client.connect();
+
+// Receive audio (similar API to AudioCapture)
+client.on('audio', (sample) => {
+  console.log(`Received ${sample.data.length} samples at ${sample.sampleRate}Hz`);
+});
+
+// List available apps (via server)
+const apps = await client.getApplications();
+
+// Start capture (request sent to server)
+await client.startCapture('Spotify');
+// Or by PID: await client.startCapture(12345);
+
+// Other capture methods
+await client.captureWindow(windowId);
+await client.captureDisplay(displayId);
+await client.captureMultipleApps(['Spotify', 'Discord']);
+
+// Get server status
+const status = await client.getStatus();
+console.log(`Capturing: ${status.capturing}, Clients: ${status.totalClients}`);
+
+// Stop capture
+await client.stopCapture();
+
+// Disconnect
+client.disconnect();
+```
+
+#### Client Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `connect()` | `Promise<void>` | Connect to the server |
+| `disconnect()` | `void` | Disconnect from server |
+| `getApplications()` | `Promise<ApplicationInfo[]>` | List apps via server |
+| `getWindows()` | `Promise<WindowInfo[]>` | List windows via server |
+| `getDisplays()` | `Promise<DisplayInfo[]>` | List displays via server |
+| `startCapture(target, opts?)` | `Promise<boolean>` | Start app capture |
+| `captureWindow(id, opts?)` | `Promise<boolean>` | Start window capture |
+| `captureDisplay(id, opts?)` | `Promise<boolean>` | Start display capture |
+| `captureMultipleApps(targets, opts?)` | `Promise<boolean>` | Start multi-app capture |
+| `stopCapture()` | `Promise<void>` | Stop current capture |
+| `getStatus()` | `Promise<ServerStatus>` | Get server status |
+| `getClientId()` | `string \| null` | Get this client's ID |
+| `getSessionId()` | `string \| null` | Get current session ID |
+
+#### Client Events
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `'connected'` | - | Connected to server |
+| `'disconnected'` | - | Disconnected from server |
+| `'reconnecting'` | `attempt: number` | Attempting to reconnect |
+| `'reconnectFailed'` | - | Max reconnect attempts reached |
+| `'audio'` | `RemoteAudioSample` | Audio data received |
+| `'captureStopped'` | - | Server stopped capture |
+| `'captureError'` | `{ message: string }` | Server capture error |
+| `'error'` | `Error` | Client-side error |
+
+#### RemoteAudioSample
+
+Audio samples received by clients have this structure:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `data` | `Float32Array` | Audio sample data |
+| `sampleRate` | `number` | Sample rate in Hz |
+| `channels` | `number` | Number of channels |
+| `timestamp` | `number` | Timestamp in seconds |
+
+---
+
 ## Events Reference
 
 ### Event: `'start'`
@@ -1112,6 +1321,9 @@ Full type definitions included. See [Module Exports](#module-exports) for import
 | `MultiAppCaptureOptions` | Options for captureMultipleApps() |
 | `MultiWindowCaptureOptions` | Options for captureMultipleWindows() |
 | `MultiDisplayCaptureOptions` | Options for captureMultipleDisplays() |
+| `ServerOptions` | Options for AudioCaptureServer |
+| `ClientOptions` | Options for AudioCaptureClient |
+| `RemoteAudioSample` | Audio sample received via client |
 | `ErrorCode` | Enum of error codes |
 
 ---
@@ -1228,6 +1440,7 @@ capture.startCapture('Spotify', { minVolume: 0.01 });
 | Multi-Window | [`17-multi-window-capture.ts`](readme_examples/17-multi-window-capture.ts) | Multiple windows |
 | Multi-Display | [`18-multi-display-capture.ts`](readme_examples/18-multi-display-capture.ts) | Multiple displays |
 | Advanced Methods | [`19-advanced-methods.ts`](readme_examples/19-advanced-methods.ts) | Activity tracking |
+| Capture Service | [`20-capture-service.ts`](readme_examples/20-capture-service.ts) | Multi-process sharing |
 
 **Run examples:**
 ```bash
@@ -1241,7 +1454,7 @@ Most examples support environment variables to target specific sources instead o
 
 | Env Variable | Type | Used By | Example |
 |-------------|------|---------|---------|
-| `TARGET_APP` | App name | 01-12, 19 | `TARGET_APP="Spotify" npx tsx readme_examples/01-quick-start.ts` |
+| `TARGET_APP` | App name | 01-12, 19, 20 | `TARGET_APP="Spotify" npx tsx readme_examples/01-quick-start.ts` |
 | `TARGET_APPS` | Comma-separated | 13, 14 | `TARGET_APPS="Safari,Music" npx tsx readme_examples/13-multi-app-capture.ts` |
 | `TARGET_WINDOW` | Window ID | 15, 17 | `TARGET_WINDOW=12345 npx tsx readme_examples/15-window-capture.ts` |
 | `TARGET_DISPLAY` | Display ID | 16, 18 | `TARGET_DISPLAY=1 npx tsx readme_examples/16-display-capture.ts` |
@@ -1257,11 +1470,13 @@ Most examples support environment variables to target specific sources instead o
 
 | macOS Version | Support | Notes |
 |---------------|---------|-------|
-| macOS 15+ (Sequoia) | ⚠️ Known issues | 10s timeout for capture start hangs |
+| macOS 15+ (Sequoia) | ⚠️ Known issues | Single-process audio capture limitation (use [server/client](#multi-process-capture-service)) |
 | macOS 14+ (Sonoma) | ✅ Full | Recommended |
 | macOS 13+ (Ventura) | ✅ Full | Minimum required |
 | macOS 12.x and below | ❌ No | ScreenCaptureKit not available |
 | Windows/Linux | ❌ No | macOS-only framework |
+
+> **Note:** On macOS 15+, only one process can capture audio at a time via ScreenCaptureKit. If you need multiple processes to receive audio, use the [Multi-Process Capture Service](#multi-process-capture-service).
 
 ---
 
