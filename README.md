@@ -50,7 +50,6 @@ Capture real-time audio from any macOS application with a simple, event-driven A
 
 - macOS 13.0 (Ventura) or later
 - Node.js 14.0.0 or later (Node.js 18+ recommended for running the automated test suite)
-- Xcode Command Line Tools (minimum version 14.0)
 - Screen Recording permission (granted in System Preferences)
 
 ## Installation
@@ -59,20 +58,19 @@ Capture real-time audio from any macOS application with a simple, event-driven A
 npm install screencapturekit-audio-capture
 ```
 
-The native addon will automatically compile during installation.
+**Prebuilt binaries are included** — no compilation or Xcode required for most users.
 
-### Build Requirements
+### Fallback Compilation
 
-The native addon requires:
+If no prebuild is available for your architecture, the addon will compile from source automatically. This requires:
 
 - **Xcode Command Line Tools** (minimum version 14.0)
   ```bash
   xcode-select --install
   ```
 - **macOS SDK 13.0 or later**
-- **Node.js development headers** (automatically included with Node.js)
 
-The build process automatically links these macOS frameworks:
+The build process links these macOS frameworks:
 - **ScreenCaptureKit** - Per-application audio capture
 - **AVFoundation** - Audio processing
 - **CoreMedia** - Media sample handling
@@ -1184,6 +1182,8 @@ capture.startCapture('Spotify', { minVolume: 0.01 });
 
 ### Build errors
 
+> **Note:** Most users won't see build errors since prebuilt binaries are included. These steps apply only if compilation is needed.
+
 **Solutions:**
 1. Install Xcode CLI Tools: `xcode-select --install`
 2. Verify macOS 13.0+: `sw_vers`
@@ -1234,6 +1234,22 @@ capture.startCapture('Spotify', { minVolume: 0.01 });
 npx tsx readme_examples/01-quick-start.ts
 npm run test:readme  # Run all examples
 ```
+
+**Targeting specific apps/windows/displays:**
+
+Most examples support environment variables to target specific sources instead of using defaults:
+
+| Env Variable | Type | Used By | Example |
+|-------------|------|---------|---------|
+| `TARGET_APP` | App name | 01-12, 19 | `TARGET_APP="Spotify" npx tsx readme_examples/01-quick-start.ts` |
+| `TARGET_APPS` | Comma-separated | 13, 14 | `TARGET_APPS="Safari,Music" npx tsx readme_examples/13-multi-app-capture.ts` |
+| `TARGET_WINDOW` | Window ID | 15, 17 | `TARGET_WINDOW=12345 npx tsx readme_examples/15-window-capture.ts` |
+| `TARGET_DISPLAY` | Display ID | 16, 18 | `TARGET_DISPLAY=1 npx tsx readme_examples/16-display-capture.ts` |
+| `VERIFY` | `1` or `true` | 13 | `VERIFY=1 npx tsx readme_examples/13-multi-app-capture.ts` |
+
+> **Tip:** Run `npx tsx readme_examples/11-find-apps.ts` to list available apps and their names. Window/display IDs are printed when running the respective capture examples.
+>
+> **Important:** Environment variables must be placed **before** the command, not after. `TARGET_APP="Spotify" npx tsx ...` works, but `npx tsx ... TARGET_APP="Spotify"` does not.
 
 ---
 
