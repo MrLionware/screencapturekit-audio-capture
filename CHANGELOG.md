@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.5] - 2025-11-26
+
+### Added
+- **Multi-Process Capture Service:** New `AudioCaptureServer` and `AudioCaptureClient` classes for sharing audio capture across multiple processes via WebSocket, working around macOS 15+ single-process capture limitation
+- **Prebuilt binary support:** Added prebuildify for ARM64 prebuilts - no compilation required for Apple Silicon Macs
+- **New example:** Added `20-capture-service.ts` demonstrating server/client multi-process audio sharing
+
+### Changed
+- **Modular codebase structure:** Reorganized source files into subdirectories (`src/capture/`, `src/native/`, `src/service/`, `src/utils/`) for better organization
+- **Improved async patterns:** Refactored to use window-based capture with enhanced async handling
+- **Test runner:** Switched `run_all.sh` from ts-node to tsx for faster execution
+
+### Documentation
+- **Project structure:** Added comprehensive project structure section to README
+- **Capture service docs:** Added full API documentation for server/client architecture
+- **Installation docs:** Updated for prebuilt binaries and added environment variable reference
+- **Platform notes:** Updated macOS 15+ compatibility notes regarding single-process limitation
+
+### Dependencies
+- Added `ws` ^8.18.3 for WebSocket server/client
+- Added `@types/ws` ^8.18.1 for TypeScript support
+- Removed `ts-node` (replaced by tsx)
+
 ## [1.3.4] - 2025-11-25
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "screencapturekit-audio-capture",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "description": "Native Node.js addon for capturing per-application audio on macOS using ScreenCaptureKit framework. Real-time audio streaming with event-based API.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
