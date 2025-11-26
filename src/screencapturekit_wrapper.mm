@@ -411,15 +411,23 @@ void EnsureCGSInitialized() {
     std::lock_guard<std::mutex> lock(cgsInitMutex);
     if (cgsInitialized) return;
     
-    // Force window server connection by calling CGMainDisplayID on main thread
+    // Force window server connection by calling CGMainDisplayID
+    // Use dispatch_async + run loop pumping to avoid deadlock with main queue
     if ([NSThread isMainThread]) {
         CGMainDisplayID();
+        cgsInitialized = true;
     } else {
-        dispatch_sync(dispatch_get_main_queue(), ^{
+        __block bool completed = false;
+        dispatch_async(dispatch_get_main_queue(), ^{
             CGMainDisplayID();
+            completed = true;
         });
+        // Pump run loop to allow the async block to execute
+        RunLoopUntilComplete(&completed, 5.0);
+        if (completed) {
+            cgsInitialized = true;
+        }
     }
-    cgsInitialized = true;
 }
 
 } // namespace
@@ -445,8 +453,7 @@ ScreenCaptureKitWrapper::~ScreenCaptureKitWrapper() {
 
 std::vector<AppInfo> ScreenCaptureKitWrapper::getAvailableApps() {
     __block std::vector<AppInfo> apps;
-
-    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    __block bool completed = false;
 
     [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
         if (error) {
@@ -462,18 +469,17 @@ std::vector<AppInfo> ScreenCaptureKitWrapper::getAvailableApps() {
                 }
             }
         }
-        dispatch_semaphore_signal(semaphore);
+        completed = true;
     }];
 
-    dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+    RunLoopUntilComplete(&completed, 10.0);
 
     return apps;
 }
 
 std::vector<WindowInfo> ScreenCaptureKitWrapper::getAvailableWindows() {
     __block std::vector<WindowInfo> windows;
-
-    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    __block bool completed = false;
 
     [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
         if (error) {
@@ -509,18 +515,17 @@ std::vector<WindowInfo> ScreenCaptureKitWrapper::getAvailableWindows() {
                 windows.push_back(info);
             }
         }
-        dispatch_semaphore_signal(semaphore);
+        completed = true;
     }];
 
-    dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+    RunLoopUntilComplete(&completed, 10.0);
     return windows;
 }
 
 std::vector<DisplayInfo> ScreenCaptureKitWrapper::getAvailableDisplays() {
     __block std::vector<DisplayInfo> displays;
+    __block bool completed = false;
     CGDirectDisplayID mainDisplay = CGMainDisplayID();
-
-    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
 
     [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
         if (error) {
@@ -536,10 +541,10 @@ std::vector<DisplayInfo> ScreenCaptureKitWrapper::getAvailableDisplays() {
                 displays.push_back(info);
             }
         }
-        dispatch_semaphore_signal(semaphore);
+        completed = true;
     }];
 
-    dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+    RunLoopUntilComplete(&completed, 10.0);
     return displays;
 }
 
@@ -594,14 +599,30 @@ bool ScreenCaptureKitWrapper::startCapture(int processId, const CaptureConfig& c
     }
 
     SCContentFilter *filter = nil;
-    if (capturedContent.displays.count > 0) {
-        NSMutableArray *excludedApps = [NSMutableArray arrayWithArray:capturedContent.applications];
-        [excludedApps removeObject:targetApp];
+    
+    // Try window-based capture first - this allows concurrent captures from different processes
+    // Per Apple WWDC: "When a single window filter is used, all the audio content from the 
+    // application that contains the window will be captured"
+    SCWindow *targetWindow = nil;
+    for (SCWindow *window in capturedContent.windows) {
+        if (window.owningApplication && window.owningApplication.processID == processId) {
+            targetWindow = window;
+            break;
+        }
+    }
+    
+    if (targetWindow) {
+        // Use window-based capture - captures all audio from the owning app
+        filter = [[SCContentFilter alloc] initWithDesktopIndependentWindow:targetWindow];
+        NSLog(@"Using window-based capture for process %d (window ID: %u)", processId, (unsigned int)targetWindow.windowID);
+    } else if (capturedContent.displays.count > 0) {
+        // Fallback to display-based capture if no windows found
+        NSLog(@"No windows found for process %d, falling back to display-based capture", processId);
         filter = [[SCContentFilter alloc] initWithDisplay:capturedContent.displays.firstObject
-                                     excludingApplications:excludedApps
+                                     includingApplications:@[targetApp]
                                         exceptingWindows:@[]];
     } else {
-        NSLog(@"No displays available for capture");
+        NSLog(@"No displays or windows available for capture");
         [capturedContent release];
         return false;
     }
@@ -669,13 +690,10 @@ bool ScreenCaptureKitWrapper::startCaptureMultiApp(const std::vector<int>& proce
 
     SCContentFilter *filter = nil;
     if (capturedContent.displays.count > 0) {
-        // Create exclude list: all apps EXCEPT the target apps
-        NSMutableArray *excludedApps = [NSMutableArray arrayWithArray:capturedContent.applications];
-        for (SCRunningApplication *targetApp in targetApps) {
-            [excludedApps removeObject:targetApp];
-        }
+        // Use includingApplications (whitelist) instead of excludingApplications (blacklist)
+        // This allows multiple processes to capture different apps concurrently
         filter = [[SCContentFilter alloc] initWithDisplay:capturedContent.displays.firstObject
-                                     excludingApplications:excludedApps
+                                     includingApplications:targetApps
                                         exceptingWindows:@[]];
     } else {
         NSLog(@"No displays available for capture");
