@@ -159,46 +159,21 @@ Common patterns for integrating audio capture into your application:
 
 ## Module Exports
 
-The package provides multiple exports for different use cases:
-
 ```typescript
-// Import classes and types
-import {
-  AudioCapture,          // High-level SDK wrapper
-  AudioStream,           // Readable stream class
-  STTConverter,          // STT conversion transform stream
-  ScreenCaptureKit,      // Low-level native binding
-  AudioCaptureError,     // Custom error class
-  ErrorCode,             // Error code enum (recommended)
-  ErrorCodes,            // Error codes object (legacy)
-  // Type imports
-  type AudioSample,
-  type ApplicationInfo,
-  type CaptureOptions,
-  type PermissionStatus,
-} from 'screencapturekit-audio-capture';
+import { AudioCapture, AudioCaptureError, ErrorCode } from 'screencapturekit-audio-capture';
+import type { AudioSample, ApplicationInfo } from 'screencapturekit-audio-capture';
 ```
 
-**Available Exports:**
+| Export | Description |
+|--------|-------------|
+| `AudioCapture` | High-level event-based API *(recommended)* |
+| `AudioStream` | Readable stream (via `createAudioStream()`) |
+| `STTConverter` | Transform stream for STT (via `createSTTStream()`) |
+| `AudioCaptureError` | Error class with codes and details |
+| `ErrorCode` | Error code enum for type-safe handling |
+| `ScreenCaptureKit` | Low-level native binding *(advanced)* |
 
-| Export | Description | Use Case |
-|--------|-------------|----------|
-| `AudioCapture` | High-level event-based API | Most users (recommended) |
-| `AudioStream` | Readable stream class | Created via `createAudioStream()` |
-| `STTConverter` | Transform stream for STT | Created via `createSTTStream()` |
-| `AudioCaptureError` | Custom error class with codes/details | Structured error handling |
-| `ErrorCode` | Error code enum | Type-safe error branching |
-| `ErrorCodes` | Error codes object (deprecated) | Legacy compatibility |
-| `ScreenCaptureKit` | Low-level native binding | Advanced users, minimal overhead |
-
-**Type Exports (TypeScript):**
-
-All types are exported for TypeScript users:
-- `AudioSample`, `ApplicationInfo`, `WindowInfo`, `DisplayInfo`
-- `CaptureInfo`, `CaptureStatus`, `PermissionStatus`, `ActivityInfo`
-- `CaptureOptions`, `AudioStreamOptions`, `STTStreamOptions`
-- `MultiAppCaptureOptions`, `MultiWindowCaptureOptions`, `MultiDisplayCaptureOptions`
-- See the [TypeScript section](#typescript) for full details.
+**Types:** `AudioSample`, `ApplicationInfo`, `WindowInfo`, `DisplayInfo`, `CaptureOptions`, `PermissionStatus`, `ActivityInfo`, and [more](#typescript).
 
 ## Testing
 
@@ -295,44 +270,44 @@ High-level event-based API (recommended).
 | # | Category | Method | Description |
 |---|----------|--------|-------------|
 | | **Discovery** | | |
-| 1 | | `getApplications(opts?)` | List all capturable apps |
-| 2 | | `getAudioApps(opts?)` | List apps likely to produce audio |
-| 3 | | `findApplication(id)` | Find app by name or bundle ID |
-| 4 | | `findByName(name)` | Alias for `findApplication()` |
-| 5 | | `getApplicationByPid(pid)` | Find app by process ID |
-| 6 | | `getWindows(opts?)` | List all capturable windows |
-| 7 | | `getDisplays()` | List all displays |
+| [1](#method-1) | | `getApplications(opts?)` | List all capturable apps |
+| [2](#method-2) | | `getAudioApps(opts?)` | List apps likely to produce audio |
+| [3](#method-3) | | `findApplication(id)` | Find app by name or bundle ID |
+| [4](#method-4) | | `findByName(name)` | Alias for `findApplication()` |
+| [5](#method-5) | | `getApplicationByPid(pid)` | Find app by process ID |
+| [6](#method-6) | | `getWindows(opts?)` | List all capturable windows |
+| [7](#method-7) | | `getDisplays()` | List all displays |
 | | **Selection** | | |
-| 8 | | `selectApp(ids?, opts?)` | Smart app selection with fallbacks |
+| [8](#method-8) | | `selectApp(ids?, opts?)` | Smart app selection with fallbacks |
 | | **Capture** | | |
-| 9 | | `startCapture(app, opts?)` | Start capturing from an app |
-| 10 | | `captureWindow(id, opts?)` | Capture from a specific window |
-| 11 | | `captureDisplay(id, opts?)` | Capture from a display |
-| 12 | | `captureMultipleApps(ids, opts?)` | Capture multiple apps (mixed) |
-| 13 | | `captureMultipleWindows(ids, opts?)` | Capture multiple windows (mixed) |
-| 14 | | `captureMultipleDisplays(ids, opts?)` | Capture multiple displays (mixed) |
-| 15 | | `stopCapture()` | Stop current capture |
-| 16 | | `isCapturing()` | Check if currently capturing |
-| 17 | | `getStatus()` | Get detailed capture status |
-| 18 | | `getCurrentCapture()` | Get current capture target info |
+| [9](#method-9) | | `startCapture(app, opts?)` | Start capturing from an app |
+| [10](#method-10) | | `captureWindow(id, opts?)` | Capture from a specific window |
+| [11](#method-11) | | `captureDisplay(id, opts?)` | Capture from a display |
+| [12](#method-12) | | `captureMultipleApps(ids, opts?)` | Capture multiple apps (mixed) |
+| [13](#method-13) | | `captureMultipleWindows(ids, opts?)` | Capture multiple windows (mixed) |
+| [14](#method-14) | | `captureMultipleDisplays(ids, opts?)` | Capture multiple displays (mixed) |
+| [15](#method-15) | | `stopCapture()` | Stop current capture |
+| [16](#method-16) | | `isCapturing()` | Check if currently capturing |
+| [17](#method-17) | | `getStatus()` | Get detailed capture status |
+| [18](#method-18) | | `getCurrentCapture()` | Get current capture target info |
 | | **Streams** | | |
-| 19 | | `createAudioStream(app, opts?)` | Create Node.js Readable stream |
-| 20 | | `createSTTStream(app?, opts?)` | Stream pre-configured for STT |
+| [19](#method-19) | | `createAudioStream(app, opts?)` | Create Node.js Readable stream |
+| [20](#method-20) | | `createSTTStream(app?, opts?)` | Stream pre-configured for STT |
 | | **Activity** | | |
-| 21 | | `enableActivityTracking(opts?)` | Track which apps produce audio |
-| 22 | | `disableActivityTracking()` | Stop tracking and clear cache |
-| 23 | | `getActivityInfo()` | Get tracking stats |
+| [21](#method-21) | | `enableActivityTracking(opts?)` | Track which apps produce audio |
+| [22](#method-22) | | `disableActivityTracking()` | Stop tracking and clear cache |
+| [23](#method-23) | | `getActivityInfo()` | Get tracking stats |
 
 #### Static Methods
 
 | # | Method | Description |
 |---|--------|-------------|
-| S1 | `AudioCapture.verifyPermissions()` | Check screen recording permission |
-| S2 | `AudioCapture.bufferToFloat32Array(buf)` | Convert Buffer to Float32Array |
-| S3 | `AudioCapture.rmsToDb(rms)` | Convert RMS (0-1) to decibels |
-| S4 | `AudioCapture.peakToDb(peak)` | Convert peak (0-1) to decibels |
-| S5 | `AudioCapture.calculateDb(buf, method?)` | Calculate dB from audio buffer |
-| S6 | `AudioCapture.writeWav(buf, opts)` | Create WAV file from PCM data |
+| [S1](#method-s1) | `AudioCapture.verifyPermissions()` | Check screen recording permission |
+| [S2](#method-s2) | `AudioCapture.bufferToFloat32Array(buf)` | Convert Buffer to Float32Array |
+| [S3](#method-s3) | `AudioCapture.rmsToDb(rms)` | Convert RMS (0-1) to decibels |
+| [S4](#method-s4) | `AudioCapture.peakToDb(peak)` | Convert peak (0-1) to decibels |
+| [S5](#method-s5) | `AudioCapture.calculateDb(buf, method?)` | Calculate dB from audio buffer |
+| [S6](#method-s6) | `AudioCapture.writeWav(buf, opts)` | Create WAV file from PCM data |
 
 #### Events
 
@@ -349,6 +324,8 @@ High-level event-based API (recommended).
 
 #### Discovery Methods
 
+<a id="method-1"></a>
+
 ##### [1] `getApplications(options?): ApplicationInfo[]`
 
 List all capturable applications.
@@ -363,6 +340,8 @@ const allApps = capture.getApplications({ includeEmpty: true });
 ```
 
 ---
+
+<a id="method-2"></a>
 
 ##### [2] `getAudioApps(options?): ApplicationInfo[]`
 
@@ -387,6 +366,8 @@ const sorted = capture.getAudioApps({ sortByActivity: true });
 
 ---
 
+<a id="method-3"></a>
+
 ##### [3] `findApplication(identifier): ApplicationInfo | null`
 
 Find app by name or bundle ID (case-insensitive, partial match).
@@ -403,11 +384,15 @@ const partial = capture.findApplication('spot'); // Matches "Spotify"
 
 ---
 
+<a id="method-4"></a>
+
 ##### [4] `findByName(name): ApplicationInfo | null`
 
 Alias for `findApplication()`. Provided for semantic clarity.
 
 ---
+
+<a id="method-5"></a>
 
 ##### [5] `getApplicationByPid(processId): ApplicationInfo | null`
 
@@ -422,6 +407,8 @@ const app = capture.getApplicationByPid(12345);
 ```
 
 ---
+
+<a id="method-6"></a>
 
 ##### [6] `getWindows(options?): WindowInfo[]`
 
@@ -451,6 +438,8 @@ windows.forEach(w => console.log(`${w.windowId}: ${w.title} (${w.owningApplicati
 
 ---
 
+<a id="method-7"></a>
+
 ##### [7] `getDisplays(): DisplayInfo[]`
 
 List all displays.
@@ -470,6 +459,8 @@ const main = displays.find(d => d.isMainDisplay);
 ---
 
 #### Selection Method
+
+<a id="method-8"></a>
 
 ##### [8] `selectApp(identifiers?, options?): ApplicationInfo | null`
 
@@ -527,6 +518,8 @@ All capture methods accept `CaptureOptions`:
 
 ---
 
+<a id="method-9"></a>
+
 ##### [9] `startCapture(appIdentifier, options?): boolean`
 
 Start capturing from an application.
@@ -551,6 +544,8 @@ capture.startCapture('Spotify', {
 
 ---
 
+<a id="method-10"></a>
+
 ##### [10] `captureWindow(windowId, options?): boolean`
 
 Capture audio from a specific window.
@@ -567,6 +562,8 @@ capture.captureWindow(target.windowId, { format: 'int16' });
 
 ---
 
+<a id="method-11"></a>
+
 ##### [11] `captureDisplay(displayId, options?): boolean`
 
 Capture audio from a display.
@@ -582,6 +579,8 @@ capture.captureDisplay(main.displayId);
 ```
 
 ---
+
+<a id="method-12"></a>
 
 ##### [12] `captureMultipleApps(appIdentifiers, options?): boolean`
 
@@ -605,6 +604,8 @@ capture.captureMultipleApps(['Minecraft', 'Discord'], {
 
 ---
 
+<a id="method-13"></a>
+
 ##### [13] `captureMultipleWindows(windowIdentifiers, options?): boolean`
 
 Capture from multiple windows. Audio is mixed.
@@ -625,6 +626,8 @@ capture.captureMultipleWindows(browserWindows.map(w => w.windowId));
 
 ---
 
+<a id="method-14"></a>
+
 ##### [14] `captureMultipleDisplays(displayIdentifiers, options?): boolean`
 
 Capture from multiple displays. Audio is mixed.
@@ -644,11 +647,15 @@ capture.captureMultipleDisplays(displays.map(d => d.displayId));
 
 ---
 
+<a id="method-15"></a>
+
 ##### [15] `stopCapture(): void`
 
 Stop the current capture session. Emits `'stop'` event.
 
 ---
+
+<a id="method-16"></a>
 
 ##### [16] `isCapturing(): boolean`
 
@@ -661,6 +668,8 @@ if (capture.isCapturing()) {
 ```
 
 ---
+
+<a id="method-17"></a>
 
 ##### [17] `getStatus(): CaptureStatus | null`
 
@@ -684,6 +693,8 @@ if (status) {
 
 ---
 
+<a id="method-18"></a>
+
 ##### [18] `getCurrentCapture(): CaptureInfo | null`
 
 Get current capture target info. Same as `getStatus()` but without config.
@@ -691,6 +702,8 @@ Get current capture target info. Same as `getStatus()` but without config.
 ---
 
 #### Stream Methods
+
+<a id="method-19"></a>
 
 ##### [19] `createAudioStream(appIdentifier, options?): AudioStream`
 
@@ -718,6 +731,8 @@ stream.stop();
 ```
 
 ---
+
+<a id="method-20"></a>
 
 ##### [20] `createSTTStream(appIdentifier?, options?): STTConverter`
 
@@ -754,6 +769,8 @@ sttStream.stop();
 
 #### Activity Tracking Methods
 
+<a id="method-21"></a>
+
 ##### [21] `enableActivityTracking(options?): void`
 
 Enable background tracking of audio activity. Useful for sorting apps by recent audio.
@@ -768,6 +785,8 @@ capture.enableActivityTracking({ decayMs: 60000 }); // 60s decay
 
 ---
 
+<a id="method-22"></a>
+
 ##### [22] `disableActivityTracking(): void`
 
 Disable tracking and clear the cache.
@@ -777,6 +796,8 @@ capture.disableActivityTracking();
 ```
 
 ---
+
+<a id="method-23"></a>
 
 ##### [23] `getActivityInfo(): ActivityInfo`
 
@@ -804,6 +825,8 @@ info.recentApps.forEach(app => {
 
 ### Static Method Reference
 
+<a id="method-s1"></a>
+
 ##### [S1] `AudioCapture.verifyPermissions(): PermissionStatus`
 
 Check screen recording permission before capture.
@@ -829,6 +852,8 @@ const app = capture.selectApp(['Spotify'], { appList: status.apps });
 
 ---
 
+<a id="method-s2"></a>
+
 ##### [S2] `AudioCapture.bufferToFloat32Array(buffer): Float32Array`
 
 Convert Buffer to Float32Array for audio processing.
@@ -845,6 +870,8 @@ capture.on('audio', (sample) => {
 
 ---
 
+<a id="method-s3"></a>
+
 ##### [S3] `AudioCapture.rmsToDb(rms): number`
 
 Convert RMS value (0-1) to decibels.
@@ -856,6 +883,8 @@ const db = AudioCapture.rmsToDb(sample.rms);
 
 ---
 
+<a id="method-s4"></a>
+
 ##### [S4] `AudioCapture.peakToDb(peak): number`
 
 Convert peak value (0-1) to decibels.
@@ -865,6 +894,8 @@ const db = AudioCapture.peakToDb(sample.peak);
 ```
 
 ---
+
+<a id="method-s5"></a>
 
 ##### [S5] `AudioCapture.calculateDb(buffer, method?): number`
 
@@ -883,6 +914,8 @@ capture.on('audio', (sample) => {
 ```
 
 ---
+
+<a id="method-s6"></a>
 
 ##### [S6] `AudioCapture.writeWav(buffer, options): Buffer`
 
@@ -971,36 +1004,16 @@ capture.on('error', (err: AudioCaptureError) => {
 
 ---
 
-### Class: `AudioStream`
+### Stream Classes
 
-Readable stream for audio capture. Extends Node.js `Readable` stream.
+**`AudioStream`** - Readable stream extending Node.js `Readable`:
+- `stop()` - Stop stream and capture
+- `getCurrentCapture()` - Get current capture info
 
-#### Methods
-
-##### `stop(): void`
-
-Stop the stream and underlying capture.
-
-##### `getCurrentCapture(): CaptureInfo | null`
-
-Get information about the current capture.
-
----
-
-### Class: `STTConverter`
-
-Transform stream pre-configured for STT engines. Extends Node.js `Transform` stream.
-
-#### Properties
-
-- `app`: The selected ApplicationInfo
-- `captureOptions`: The options used for capture
-
-#### Methods
-
-##### `stop(): void`
-
-Stop the stream and underlying capture.
+**`STTConverter`** - Transform stream extending Node.js `Transform`:
+- `stop()` - Stop stream and capture
+- `app` - The selected ApplicationInfo
+- `captureOptions` - Options used for capture
 
 ---
 
@@ -1049,19 +1062,7 @@ capture.on('start', ({ processId, app }) => {
 
 ### Event: `'audio'`
 
-Emitted for each audio sample.
-
-**`AudioSample` properties:**
-- `data`: Buffer (Float32 or Int16 PCM)
-- `sampleRate`: Sample rate (e.g., 48000)
-- `channels`: Channel count (1 or 2)
-- `timestamp`: Capture timestamp
-- `format`: `'float32'` or `'int16'`
-- `sampleCount`: Total samples
-- `framesCount`: Samples per channel
-- `durationMs`: Approximate duration
-- `rms`: Root mean square volume (0-1)
-- `peak`: Peak volume (0-1)
+Emitted for each audio sample. See [Audio Sample Structure](#audio-sample-structure) for all properties.
 
 ```typescript
 capture.on('audio', (sample: AudioSample) => {
@@ -1093,25 +1094,7 @@ capture.on('error', (err: AudioCaptureError) => {
 
 ## TypeScript
 
-The SDK provides full type definitions. All types are exported:
-
-```typescript
-import {
-  AudioCapture,
-  AudioStream,
-  STTConverter,
-  AudioCaptureError,
-  ErrorCode,
-  type AudioSample,
-  type ApplicationInfo,
-  type WindowInfo,
-  type DisplayInfo,
-  type CaptureInfo,
-  type CaptureStatus,
-  type PermissionStatus,
-  type ActivityInfo,
-} from 'screencapturekit-audio-capture';
-```
+Full type definitions included. See [Module Exports](#module-exports) for import syntax.
 
 ### Available Types
 
