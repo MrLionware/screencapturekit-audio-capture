@@ -5,12 +5,12 @@
       "cflags!": [ "-fno-exceptions" ],
       "cflags_cc!": [ "-fno-exceptions" ],
       "sources": [
-        "src/addon.mm",
-        "src/screencapturekit_wrapper.mm"
+        "src/native/addon.mm",
+        "src/native/wrapper.mm"
       ],
       "include_dirs": [
         "<!(node -p \"require('node-addon-api').include_dir\")",
-        "src"
+        "src/native"
       ],
       "dependencies": [
         "<!(node -p \"require('node-addon-api').gyp\")"
