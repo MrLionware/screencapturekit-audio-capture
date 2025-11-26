@@ -10,9 +10,9 @@ import vm from 'node:vm';
 import Module from 'node:module';
 import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
-import type { AudioCapture } from '../../dist/audio-capture';
-import type { AudioStream } from '../../dist/audio-stream';
-import type { STTConverter } from '../../dist/stt-converter';
+import type { AudioCapture } from '../../dist/capture/audio-capture';
+import type { AudioStream } from '../../dist/capture/audio-stream';
+import type { STTConverter } from '../../dist/utils/stt-converter';
 import type { AudioCaptureError, ErrorCode } from '../../dist/errors';
 import type { MockScreenCaptureKit, NativeScreenCaptureKitClass } from '../fixtures/mock-native';
 
@@ -722,12 +722,15 @@ export function loadSDKWithMock(options: LoadSDKWithMockOptions = {}): SDKExport
 
   // Clear any cached modules to ensure fresh load
   const distPath = path.resolve(__dirname, '../../dist');
-  const nativePath = path.resolve(distPath, 'native.js');
-  const audioCaptturePath = path.resolve(distPath, 'audio-capture.js');
-  const audioStreamPath = path.resolve(distPath, 'audio-stream.js');
-  const sttConverterPath = path.resolve(distPath, 'stt-converter.js');
+  const nativePath = path.resolve(distPath, 'utils/native-loader.js');
+  const audioCaptturePath = path.resolve(distPath, 'capture/audio-capture.js');
+  const audioStreamPath = path.resolve(distPath, 'capture/audio-stream.js');
+  const sttConverterPath = path.resolve(distPath, 'utils/stt-converter.js');
   const errorsPath = path.resolve(distPath, 'errors.js');
   const indexPath = path.resolve(distPath, 'index.js');
+  const captureIndexPath = path.resolve(distPath, 'capture/index.js');
+  const serviceIndexPath = path.resolve(distPath, 'service/index.js');
+  const utilsIndexPath = path.resolve(distPath, 'utils/index.js');
 
   // Clear module cache for all SDK modules
   delete require.cache[nativePath];
@@ -736,6 +739,9 @@ export function loadSDKWithMock(options: LoadSDKWithMockOptions = {}): SDKExport
   delete require.cache[sttConverterPath];
   delete require.cache[errorsPath];
   delete require.cache[indexPath];
+  delete require.cache[captureIndexPath];
+  delete require.cache[serviceIndexPath];
+  delete require.cache[utilsIndexPath];
 
   // Pre-populate the cache with the mock native module
   require.cache[nativePath] = {
