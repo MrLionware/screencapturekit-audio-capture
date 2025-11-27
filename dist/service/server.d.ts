@@ -20,7 +20,7 @@
  * ```
  */
 import { EventEmitter } from 'events';
-import type { CaptureOptions } from '../types';
+import type { CaptureOptions } from '../core/types';
 export interface ServerOptions {
     /** Port to listen on (default: 9123) */
     port?: number;
@@ -41,6 +41,7 @@ export declare class AudioCaptureServer extends EventEmitter {
     private currentSession;
     private options;
     private clientIdCounter;
+    private _disposed;
     constructor(options?: ServerOptions);
     private setupCaptureEvents;
     /**
@@ -51,6 +52,25 @@ export declare class AudioCaptureServer extends EventEmitter {
      * Stop the server and all captures
      */
     stop(): Promise<void>;
+    /**
+     * Dispose of this server instance and release all resources.
+     * Stops the server, disposes the underlying AudioCapture, and cleans up.
+     * This method is idempotent - calling it multiple times is safe.
+     */
+    dispose(): Promise<void>;
+    /**
+     * Check if this server has been disposed
+     */
+    isDisposed(): boolean;
+    /**
+     * Clean up all active server instances
+     * @returns Number of servers that were cleaned up
+     */
+    static cleanupAll(): Promise<number>;
+    /**
+     * Get the count of active server instances
+     */
+    static getActiveInstanceCount(): number;
     private handleConnection;
     private handleMessage;
     private handleListApps;

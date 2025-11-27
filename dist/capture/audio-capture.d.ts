@@ -5,7 +5,7 @@
 import { EventEmitter } from 'events';
 import { AudioStream } from './audio-stream';
 import { STTConverter } from '../utils/stt-converter';
-import type { ApplicationInfo, WindowInfo, DisplayInfo, CaptureInfo, CaptureOptions, GetApplicationsOptions, GetWindowsOptions, GetAudioAppsOptions, SelectAppOptions, ActivityTrackingOptions, ActivityInfo, PermissionStatus, CaptureStatus, AudioStreamOptions, STTStreamOptions, WavOptions, AppIdentifier, MultiAppCaptureOptions, MultiAppIdentifier, MultiWindowCaptureOptions, MultiWindowIdentifier, MultiDisplayCaptureOptions, MultiDisplayIdentifier } from '../types';
+import type { ApplicationInfo, WindowInfo, DisplayInfo, CaptureInfo, CaptureOptions, GetApplicationsOptions, GetWindowsOptions, GetAudioAppsOptions, SelectAppOptions, ActivityTrackingOptions, ActivityInfo, PermissionStatus, CaptureStatus, AudioStreamOptions, STTStreamOptions, WavOptions, AppIdentifier, MultiAppCaptureOptions, MultiAppIdentifier, MultiWindowCaptureOptions, MultiWindowIdentifier, MultiDisplayCaptureOptions, MultiDisplayIdentifier } from '../core/types';
 /**
  * Main AudioCapture class
  * High-level API for capturing audio from macOS applications
@@ -20,10 +20,39 @@ export declare class AudioCapture extends EventEmitter {
     private readonly _audioActivityCache;
     private _activityTrackingEnabled;
     private _activityDecayMs;
+    /** Whether this instance has been disposed */
+    private _disposed;
     /**
      * Create a new AudioCapture instance
      */
     constructor();
+    /**
+     * Dispose of this AudioCapture instance and release all resources.
+     * Stops any active capture, removes event listeners, and marks the instance as disposed.
+     * This method is idempotent - calling it multiple times is safe.
+     */
+    dispose(): void;
+    /**
+     * Check if this instance has been disposed
+     * @returns true if dispose() has been called
+     */
+    isDisposed(): boolean;
+    /**
+     * Throw if this instance has been disposed
+     * @internal
+     */
+    private _assertNotDisposed;
+    /**
+     * Clean up all active AudioCapture instances.
+     * Useful for cleanup in tests or when shutting down an application.
+     * @returns Number of instances that were cleaned up
+     */
+    static cleanupAll(): number;
+    /**
+     * Get the count of active AudioCapture instances
+     * @returns Number of active instances
+     */
+    static getActiveInstanceCount(): number;
     /**
      * Get all available applications
      * @param options - Filter options

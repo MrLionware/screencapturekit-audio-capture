@@ -2,7 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AudioStream = exports.AudioCapture = void 0;
 /**
- * Core audio capture functionality
+ * Capture module - Core audio capture functionality
+ *
+ * This module provides the main APIs for capturing audio:
+ * - AudioCapture: Event-based audio capture with full control
+ * - AudioStream: Stream-based interface for piping audio data
  */
 var audio_capture_1 = require("./audio-capture");
 Object.defineProperty(exports, "AudioCapture", { enumerable: true, get: function () { return audio_capture_1.AudioCapture; } });

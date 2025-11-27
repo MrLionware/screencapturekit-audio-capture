@@ -25,6 +25,37 @@ exports.AudioCaptureServer = void 0;
 const events_1 = require("events");
 const ws_1 = require("ws");
 const audio_capture_1 = require("../capture/audio-capture");
+/** Set of all active server instances for cleanup */
+const activeServers = new Set();
+/** Symbol to mark that server exit handlers have been installed (survives module reloads) */
+const SERVER_EXIT_HANDLERS_KEY = Symbol.for('screencapturekit.server.exitHandlers');
+/**
+ * Install process exit handlers for graceful server cleanup
+ * Uses a process-level symbol to prevent duplicate handlers across module reloads
+ */
+function installServerExitHandlers() {
+    // Check process-level flag to prevent duplicate handlers across module reloads
+    if (process[SERVER_EXIT_HANDLERS_KEY])
+        return;
+    process[SERVER_EXIT_HANDLERS_KEY] = true;
+    const cleanup = async (signal) => {
+        // Stop all active servers
+        const stopPromises = [];
+        for (const server of activeServers) {
+            stopPromises.push(server.stop().catch(() => {
+                // Ignore errors during cleanup
+            }));
+        }
+        await Promise.all(stopPromises);
+        activeServers.clear();
+        if (signal === 'SIGINT' || signal === 'SIGTERM') {
+            process.exit(0);
+        }
+    };
+    // Handle Ctrl+C and kill signals
+    process.on('SIGINT', () => cleanup('SIGINT'));
+    process.on('SIGTERM', () => cleanup('SIGTERM'));
+}
 class AudioCaptureServer extends events_1.EventEmitter {
     constructor(options = {}) {
         super();
@@ -32,12 +63,16 @@ class AudioCaptureServer extends events_1.EventEmitter {
         this.clients = new Map();
         this.currentSession = null;
         this.clientIdCounter = 0;
+        this._disposed = false;
         this.options = {
             port: options.port ?? 9123,
             host: options.host ?? 'localhost',
         };
         this.capture = new audio_capture_1.AudioCapture();
         this.setupCaptureEvents();
+        // Track this instance for cleanup
+        activeServers.add(this);
+        installServerExitHandlers();
     }
     setupCaptureEvents() {
         this.capture.on('audio', (sample) => {
@@ -104,6 +139,48 @@ class AudioCaptureServer extends events_1.EventEmitter {
                 resolve();
             }
         });
+    }
+    /**
+     * Dispose of this server instance and release all resources.
+     * Stops the server, disposes the underlying AudioCapture, and cleans up.
+     * This method is idempotent - calling it multiple times is safe.
+     */
+    async dispose() {
+        if (this._disposed)
+            return;
+        this._disposed = true;
+        await this.stop();
+        this.capture.dispose();
+        activeServers.delete(this);
+        this.removeAllListeners();
+    }
+    /**
+     * Check if this server has been disposed
+     */
+    isDisposed() {
+        return this._disposed;
+    }
+    /**
+     * Clean up all active server instances
+     * @returns Number of servers that were cleaned up
+     */
+    static async cleanupAll() {
+        const count = activeServers.size;
+        const disposePromises = [];
+        for (const server of activeServers) {
+            disposePromises.push(server.dispose().catch(() => {
+                // Ignore errors during cleanup
+            }));
+        }
+        await Promise.all(disposePromises);
+        activeServers.clear();
+        return count;
+    }
+    /**
+     * Get the count of active server instances
+     */
+    static getActiveInstanceCount() {
+        return activeServers.size;
     }
     handleConnection(ws) {
         const clientId = `client_${++this.clientIdCounter}`;

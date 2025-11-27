@@ -3,7 +3,7 @@
  * Handles common conversions: Float32 to Int16, stereo to mono, resampling
  */
 import { Transform, TransformCallback } from 'stream';
-import type { ApplicationInfo, AudioFormat, AudioSample } from '../types';
+import type { ApplicationInfo, AudioFormat, AudioSample } from '../core/types';
 /**
  * Options for creating an STTConverter
  */
