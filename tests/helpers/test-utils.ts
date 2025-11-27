@@ -13,7 +13,7 @@ import { Readable } from 'node:stream';
 import type { AudioCapture } from '../../dist/capture/audio-capture';
 import type { AudioStream } from '../../dist/capture/audio-stream';
 import type { STTConverter } from '../../dist/utils/stt-converter';
-import type { AudioCaptureError, ErrorCode } from '../../dist/errors';
+import type { AudioCaptureError, ErrorCode } from '../../dist/core/errors';
 import type { MockScreenCaptureKit, NativeScreenCaptureKitClass } from '../fixtures/mock-native';
 
 /**
@@ -328,9 +328,23 @@ export function createAudioCaptureMock(options: CreateAudioCaptureMockOptions = 
 
   class MockAudioCapture extends EventEmitter {
     static instances: MockAudioCapture[] = [];
+    static activeInstances: Set<MockAudioCapture> = new Set();
     static MockAudioStream = MockAudioStream;
     static MockSTTStream = MockSTTStream;
     static writeWavCalls: any[] = [];
+
+    // Cleanup static methods
+    static cleanupAll(): number {
+      const count = MockAudioCapture.activeInstances.size;
+      for (const instance of MockAudioCapture.activeInstances) {
+        instance.dispose();
+      }
+      return count;
+    }
+
+    static getActiveInstanceCount(): number {
+      return MockAudioCapture.activeInstances.size;
+    }
 
     static bufferToFloat32Array = options.bufferToFloat32Array || ((buffer: Buffer): Float32Array => {
       const floats: number[] = [];
@@ -382,6 +396,7 @@ export function createAudioCaptureMock(options: CreateAudioCaptureMockOptions = 
     private _activityTrackingEnabled: boolean = false;
     private _activityDecayMs: number = 30000;
     private _activityEntries: any[] = [];
+    private _disposed: boolean = false;
 
     constructor() {
       super();
@@ -390,6 +405,21 @@ export function createAudioCaptureMock(options: CreateAudioCaptureMockOptions = 
       this.windows = windows;
       this.displays = displays;
       MockAudioCapture.instances.push(this);
+      MockAudioCapture.activeInstances.add(this);
+    }
+
+    // Cleanup instance methods
+    dispose(): void {
+      if (this._disposed) return;
+      this._disposed = true;
+      if (this.capturing) {
+        this.stopCapture();
+      }
+      MockAudioCapture.activeInstances.delete(this);
+    }
+
+    isDisposed(): boolean {
+      return this._disposed;
     }
 
     enableActivityTracking(opts: { decayMs?: number } = {}): void {
@@ -726,22 +756,29 @@ export function loadSDKWithMock(options: LoadSDKWithMockOptions = {}): SDKExport
   const audioCaptturePath = path.resolve(distPath, 'capture/audio-capture.js');
   const audioStreamPath = path.resolve(distPath, 'capture/audio-stream.js');
   const sttConverterPath = path.resolve(distPath, 'utils/stt-converter.js');
-  const errorsPath = path.resolve(distPath, 'errors.js');
   const indexPath = path.resolve(distPath, 'index.js');
   const captureIndexPath = path.resolve(distPath, 'capture/index.js');
   const serviceIndexPath = path.resolve(distPath, 'service/index.js');
   const utilsIndexPath = path.resolve(distPath, 'utils/index.js');
+  // Core module paths
+  const coreIndexPath = path.resolve(distPath, 'core/index.js');
+  const coreErrorsPath = path.resolve(distPath, 'core/errors.js');
+  const coreTypesPath = path.resolve(distPath, 'core/types.js');
+  const coreCleanupPath = path.resolve(distPath, 'core/cleanup.js');
 
   // Clear module cache for all SDK modules
   delete require.cache[nativePath];
   delete require.cache[audioCaptturePath];
   delete require.cache[audioStreamPath];
   delete require.cache[sttConverterPath];
-  delete require.cache[errorsPath];
   delete require.cache[indexPath];
   delete require.cache[captureIndexPath];
   delete require.cache[serviceIndexPath];
   delete require.cache[utilsIndexPath];
+  delete require.cache[coreIndexPath];
+  delete require.cache[coreErrorsPath];
+  delete require.cache[coreTypesPath];
+  delete require.cache[coreCleanupPath];
 
   // Pre-populate the cache with the mock native module
   require.cache[nativePath] = {

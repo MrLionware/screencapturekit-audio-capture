@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { createNativeMock, MockScreenCaptureKit } from '../fixtures/mock-native';
 import { loadSDKWithMock } from '../helpers/test-utils';
 import { MOCK_APPS } from '../fixtures/mock-data';
-import type { ApplicationInfo } from '../../dist/types';
+import type { ApplicationInfo } from '../../dist/core/types';
 
 /**
  * Create a native mock that counts getAvailableApps() calls

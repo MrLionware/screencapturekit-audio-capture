@@ -12,7 +12,7 @@ import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSDKWithMock } from '../helpers/test-utils';
 import { MOCK_APPS } from '../fixtures/mock-data';
-import type { ApplicationInfo, CaptureStatus } from '../../dist/types';
+import type { ApplicationInfo, CaptureStatus } from '../../dist/core/types';
 import type { NativeCaptureConfig, NativeAudioSample } from '../fixtures/mock-native';
 
 test('Static Utilities', async (t) => {

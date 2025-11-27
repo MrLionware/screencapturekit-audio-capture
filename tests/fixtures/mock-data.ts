@@ -5,7 +5,7 @@
  * Centralizing mock data ensures consistency and makes it easy to update.
  */
 
-import type { ApplicationInfo, WindowInfo, DisplayInfo } from '../../dist/types';
+import type { ApplicationInfo, WindowInfo, DisplayInfo } from '../../dist/core/types';
 
 /**
  * Standard mock applications for testing

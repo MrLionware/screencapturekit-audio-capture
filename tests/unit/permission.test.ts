@@ -10,7 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSDKWithMock } from '../helpers/test-utils';
 import { MOCK_APPS } from '../fixtures/mock-data';
-import type { ApplicationInfo } from '../../dist/types';
+import type { ApplicationInfo } from '../../dist/core/types';
 
 test('Permission Verification', async (t) => {
   await t.test('Permission Denied', async (t) => {

@@ -5,7 +5,7 @@
 
 import { Readable, ReadableOptions } from 'stream';
 import type { AudioCapture } from './audio-capture';
-import type { AppIdentifier, AudioSample, CaptureOptions, CaptureInfo, AudioStreamOptions } from '../types';
+import type { AppIdentifier, AudioSample, CaptureOptions, CaptureInfo, AudioStreamOptions } from '../core/types';
 
 /**
  * Readable stream for audio capture

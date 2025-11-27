@@ -15,8 +15,10 @@ export type { ServerOptions, CaptureSession, ClientOptions, RemoteAudioSample } 
 // Utilities
 export { STTConverter, ScreenCaptureKit } from './utils';
 
-// Errors
-export { AudioCaptureError, ErrorCode, ErrorCodes } from './errors';
+// Core: Errors, Types, and Cleanup (re-exported from core/)
+export { AudioCaptureError, ErrorCode, ErrorCodes } from './core/errors';
+export { cleanupAll, getActiveInstanceCount, installGracefulShutdown } from './core/cleanup';
+export type { CleanupResult } from './core/cleanup';
 
 // Types
 export type {
@@ -44,7 +46,10 @@ export type {
   STTStreamOptions,
   WavOptions,
   AppIdentifier,
-} from './types';
+  MultiAppCaptureOptions,
+  MultiWindowCaptureOptions,
+  MultiDisplayCaptureOptions,
+} from './core/types';
 
 // Default export for convenience
 export { AudioCapture as default } from './capture';

@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import type { EventEmitter } from 'node:events';
 import type { Readable } from 'node:stream';
-import type { AudioSample, AudioFormat } from '../../dist/types';
+import type { AudioSample, AudioFormat } from '../../dist/core/types';
 import type { AudioCapture } from '../../dist/capture/audio-capture';
 
 /**

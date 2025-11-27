@@ -9,7 +9,7 @@ import type { EventEmitter } from 'node:events';
 import { loadSDKWithMock, type SDKExports } from './test-utils';
 import { createNativeMock, type CreateNativeMockOptions, type MockScreenCaptureKit, type NativeScreenCaptureKitClass } from '../fixtures/mock-native';
 import type { AudioCapture } from '../../dist/capture/audio-capture';
-import type { AppIdentifier, AudioStreamOptions } from '../../dist/types';
+import type { AppIdentifier, AudioStreamOptions } from '../../dist/core/types';
 
 /**
  * Create a test context with SDK and mocks

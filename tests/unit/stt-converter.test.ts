@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { loadSDKWithMock } from '../helpers/test-utils';
 import { MOCK_APPS } from '../fixtures/mock-data';
-import type { ApplicationInfo, AppIdentifier, AudioSample, AudioStreamOptions } from '../../dist/types';
+import type { ApplicationInfo, AppIdentifier, AudioSample, AudioStreamOptions } from '../../dist/core/types';
 
 test('STTConverter', async (t) => {
   await t.test('Format Conversion', async (t) => {

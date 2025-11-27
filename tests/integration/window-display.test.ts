@@ -13,7 +13,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSDKWithMock } from '../helpers/test-utils';
 import { createNativeMock, MockScreenCaptureKit } from '../fixtures/mock-native';
-import type { ApplicationInfo, CaptureStatus } from '../../dist/types';
+import type { ApplicationInfo, CaptureStatus } from '../../dist/core/types';
 
 const MOCK_APPS: ApplicationInfo[] = [
   { processId: 100, bundleIdentifier: 'com.example.app', applicationName: 'Example App' },

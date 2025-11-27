@@ -10,7 +10,7 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSDKWithMock } from '../helpers/test-utils';
-import type { AudioSample, ApplicationInfo, ActivityInfo } from '../../dist/types';
+import type { AudioSample, ApplicationInfo, ActivityInfo } from '../../dist/core/types';
 import type { NativeAudioSample } from '../fixtures/mock-native';
 
 const MOCK_APPS: ApplicationInfo[] = [

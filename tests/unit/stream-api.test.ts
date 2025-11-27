@@ -13,7 +13,7 @@ import { Readable } from 'node:stream';
 import { MockScreenCaptureKit, type NativeAudioSample, type NativeCaptureConfig } from '../fixtures/mock-native';
 import { loadSDKWithMock } from '../helpers/test-utils';
 import { MOCK_APPS } from '../fixtures/mock-data';
-import type { CaptureInfo } from '../../dist/types';
+import type { CaptureInfo } from '../../dist/core/types';
 
 function createSampleCallback(): NativeAudioSample {
   const floatData = new Float32Array(1024);

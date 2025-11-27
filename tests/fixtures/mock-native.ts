@@ -5,7 +5,7 @@
  * This allows tests to simulate various native behaviors without actual hardware.
  */
 
-import type { ApplicationInfo, WindowInfo, DisplayInfo } from '../../dist/types';
+import type { ApplicationInfo, WindowInfo, DisplayInfo } from '../../dist/core/types';
 import { MOCK_APPS, MOCK_WINDOWS, MOCK_DISPLAYS } from './mock-data';
 
 /**

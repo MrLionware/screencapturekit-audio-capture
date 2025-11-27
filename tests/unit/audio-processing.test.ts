@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { createCaptureContext } from '../helpers/test-context';
 import { createAudioPattern } from '../helpers/factories';
 import { assertAudioSample, assertNear } from '../helpers/assertions';
-import type { AudioSample } from '../../dist/types';
+import type { AudioSample } from '../../dist/core/types';
 import type { NativeAudioSample } from '../fixtures/mock-native';
 
 test('Audio Processing', async (t) => {

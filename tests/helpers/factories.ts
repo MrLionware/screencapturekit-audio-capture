@@ -5,7 +5,7 @@
  * Makes tests more readable and maintainable.
  */
 
-import type { AudioSample, ApplicationInfo, WindowInfo, DisplayInfo, AudioFormat } from '../../dist/types';
+import type { AudioSample, ApplicationInfo, WindowInfo, DisplayInfo, AudioFormat } from '../../dist/core/types';
 
 /**
  * Options for creating audio samples

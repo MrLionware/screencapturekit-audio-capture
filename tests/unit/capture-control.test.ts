@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { createNativeMock } from '../fixtures/mock-native';
 import { loadSDKWithMock } from '../helpers/test-utils';
 import { MOCK_APPS } from '../fixtures/mock-data';
-import type { ApplicationInfo, CaptureStatus } from '../../dist/types';
+import type { ApplicationInfo, CaptureStatus } from '../../dist/core/types';
 import type { NativeAudioSample, NativeCaptureConfig } from '../fixtures/mock-native';
 
 test('Capture Control', async (t) => {

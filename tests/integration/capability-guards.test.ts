@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSDKWithMock } from '../helpers/test-utils';
-import type { ApplicationInfo } from '../../dist/types';
+import type { ApplicationInfo } from '../../dist/core/types';
 
 const MOCK_APPS: ApplicationInfo[] = [
   { processId: 100, bundleIdentifier: 'com.example.app', applicationName: 'Example App' },

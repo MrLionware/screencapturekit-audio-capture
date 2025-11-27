@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSDKWithMock } from '../helpers/test-utils';
-import type { ApplicationInfo } from '../../dist/types';
+import type { ApplicationInfo } from '../../dist/core/types';
 import type { NativeCaptureConfig } from '../fixtures/mock-native';
 
 const MOCK_APPS: ApplicationInfo[] = [

@@ -21,7 +21,7 @@
 
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
-import type { ApplicationInfo, WindowInfo, DisplayInfo, CaptureOptions } from '../types';
+import type { ApplicationInfo, WindowInfo, DisplayInfo, CaptureOptions } from '../core/types';
 
 export interface ClientOptions {
   /** WebSocket URL of the capture server (default: 'ws://localhost:9123') */

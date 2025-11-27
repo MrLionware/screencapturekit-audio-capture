@@ -72,9 +72,10 @@ tests/
 ```
 tests/
 ├── unit/                          # Unit tests (single component)
-│   ├── audio-processing.test.ts       # RMS, peak, format conversion
 │   ├── app-selection.test.ts          # App discovery & selection
+│   ├── audio-processing.test.ts       # RMS, peak, format conversion
 │   ├── capture-control.test.ts        # Start/stop logic
+│   ├── cleanup.test.ts                # Resource lifecycle & cleanup
 │   ├── permission.test.ts             # Permission verification
 │   ├── static-utilities.test.ts       # Static helper methods
 │   ├── stream-api.test.ts             # AudioStream
