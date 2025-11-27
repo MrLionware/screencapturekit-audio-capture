@@ -8,7 +8,7 @@
  *   npx tsx 15-window-capture.ts
  */
 
-import { AudioCapture, type AudioSample, type WindowInfo } from '../src/index';
+import { AudioCapture, type AudioSample, type WindowInfo } from '../../src/index';
 
 // Global error handlers for test suite
 process.on('uncaughtException', (err) => {

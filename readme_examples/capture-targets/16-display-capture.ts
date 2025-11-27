@@ -1,14 +1,14 @@
 /**
- * Multi-Display Capture Example
+ * Display Capture Example
  * 
- * Capture audio from multiple displays simultaneously.
- * Note: Most setups have only one display, but this works with multi-monitor setups.
+ * Capture audio from an entire display (screen).
+ * Captures audio from ALL applications on that display.
  * 
  * Usage:
- *   npx tsx 18-multi-display-capture.ts
+ *   npx tsx 16-display-capture.ts
  */
 
-import { AudioCapture, type AudioSample, type DisplayInfo } from '../src/index';
+import { AudioCapture, type AudioSample, type DisplayInfo } from '../../src/index';
 
 // Global error handlers for test suite
 process.on('uncaughtException', (err) => {
@@ -28,7 +28,7 @@ capture.on('error', (err) => {
 });
 
 console.log('=========================================');
-console.log('     Multi-Display Capture Example');
+console.log('        Display Capture Example');
 console.log('=========================================');
 console.log('');
 
@@ -48,60 +48,50 @@ if (displays.length === 0) {
     process.exit(1);
 }
 
-console.log(`Found ${displays.length} display(s):`);
+console.log('Available displays:');
 displays.forEach((display, i) => {
-    const mainBadge = display.isMainDisplay ? ' ★ Main' : '';
+    const mainBadge = display.isMainDisplay ? ' (Main)' : '';
     console.log(`  ${i + 1}. Display ${display.displayId}${mainBadge}`);
     console.log(`     Resolution: ${display.width} x ${display.height}`);
 });
 console.log('');
 
-// Select displays - use TARGET_DISPLAY env var if set
-let selectedDisplays: DisplayInfo[];
+// Select display - use TARGET_DISPLAY env var if set, otherwise use main display
+let targetDisplay: DisplayInfo | null = null;
 
 if (process.env.TARGET_DISPLAY) {
     const displayId = parseInt(process.env.TARGET_DISPLAY, 10);
-    const targetDisp = displays.find(d => d.displayId === displayId);
-    if (targetDisp) {
-        // Include the target display and any others
-        selectedDisplays = [targetDisp, ...displays.filter(d => d.displayId !== displayId)];
-        console.log(`Using TARGET_DISPLAY: ${displayId}`);
-    } else {
-        console.log(`⚠️  Display ID ${displayId} not found. Using all displays.`);
-        selectedDisplays = displays;
+    targetDisplay = displays.find(d => d.displayId === displayId) || null;
+    if (!targetDisplay) {
+        console.log(`⚠️  Display ID ${displayId} not found. Using auto-selection.`);
     }
-} else if (displays.length === 1) {
-    console.log('ℹ️  Only one display found. Using single display capture.');
-    console.log('   (Connect more monitors to test multi-display capture)');
-    selectedDisplays = [displays[0]];
-} else {
-    // Use all displays for multi-display capture
-    selectedDisplays = displays;
-    console.log(`🖥️  Multi-monitor setup detected! Capturing from all ${displays.length} displays.`);
 }
 
-console.log('');
+if (!targetDisplay) {
+    targetDisplay = displays.find(d => d.isMainDisplay) || displays[0];
+}
+
 console.log('=========================================');
-console.log(`🎯 Selected ${selectedDisplays.length} display(s):`);
-selectedDisplays.forEach((display, i) => {
-    const mainBadge = display.isMainDisplay ? ' (Main)' : '';
-    console.log(`   ${i + 1}. Display ${display.displayId}${mainBadge} - ${display.width}x${display.height}`);
-});
+console.log(`🎯 Selected display:`);
+console.log(`   Display ID: ${targetDisplay.displayId}`);
+console.log(`   Resolution: ${targetDisplay.width} x ${targetDisplay.height}`);
+console.log(`   Main display: ${targetDisplay.isMainDisplay ? 'Yes' : 'No'}`);
 console.log('=========================================');
 console.log('');
 
-// Track audio
+// Track audio activity
 let lastAudioTime = 0;
 let totalSamples = 0;
 
+// Set up event handlers
 capture.on('start', (info) => {
     console.log('✅ Display capture started!');
     console.log(`   Target type: ${info.targetType}`);
     if (info.display) {
-        console.log(`   Primary display: ${info.display.displayId}`);
+        console.log(`   Display: ${info.display.displayId} (${info.display.width}x${info.display.height})`);
     }
     console.log('');
-    console.log('📢 Capturing audio from apps on selected display(s).');
+    console.log('📢 Capturing audio from ALL apps on this display.');
     console.log('');
 });
 
@@ -137,14 +127,7 @@ const silenceCheck = setInterval(() => {
 
 // Start capture
 try {
-    if (selectedDisplays.length === 1) {
-        // Single display
-        capture.captureDisplay(selectedDisplays[0].displayId);
-    } else {
-        // Multiple displays
-        const displayIds = selectedDisplays.map(d => d.displayId);
-        capture.captureMultipleDisplays(displayIds, { allowPartial: true });
-    }
+    capture.captureDisplay(targetDisplay.displayId);
     console.log('Capturing for 15 seconds...');
     console.log('(Play audio in any app to see output)\n');
 } catch (err) {

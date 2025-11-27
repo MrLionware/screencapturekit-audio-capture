@@ -1,4 +1,4 @@
-import { AudioCapture, AudioStream, type CaptureStatus } from '../src/index';
+import { AudioCapture, AudioStream, type CaptureStatus } from '../../src/index';
 import { pipeline, Writable } from 'stream';
 
 // Global error handlers for test suite

@@ -1,4 +1,4 @@
-import { AudioCapture, STTConverter, type AudioSample, type PermissionStatus, type ApplicationInfo, ErrorCode, AudioCaptureError } from '../src/index';
+import { AudioCapture, STTConverter, type AudioSample, type PermissionStatus, type ApplicationInfo, ErrorCode, AudioCaptureError } from '../../src/index';
 import { pipeline } from 'stream';
 import { Writable } from 'stream';
 

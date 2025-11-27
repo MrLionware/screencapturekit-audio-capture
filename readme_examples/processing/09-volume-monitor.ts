@@ -1,4 +1,4 @@
-import { AudioCapture, type AudioSample } from '../src/index';
+import { AudioCapture, type AudioSample } from '../../src/index';
 
 // Global error handlers for test suite
 process.on('uncaughtException', (err) => {

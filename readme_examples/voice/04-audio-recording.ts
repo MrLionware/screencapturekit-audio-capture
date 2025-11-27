@@ -1,4 +1,4 @@
-import { AudioCapture, type AudioSample } from '../src/index';
+import { AudioCapture, type AudioSample } from '../../src/index';
 import fs from 'fs';
 import path from 'path';
 

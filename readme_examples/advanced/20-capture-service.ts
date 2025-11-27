@@ -1,4 +1,4 @@
-import { AudioCaptureServer, AudioCaptureClient, type RemoteAudioSample } from '../src/index';
+import { AudioCaptureServer, AudioCaptureClient, type RemoteAudioSample } from '../../src/index';
 
 // Global error handlers for test suite
 process.on('uncaughtException', (err) => {

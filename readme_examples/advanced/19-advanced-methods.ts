@@ -15,7 +15,7 @@
  *   npx tsx 19-advanced-methods.ts
  */
 
-import { AudioCapture, type AudioSample, type ApplicationInfo, type ActivityInfo, type CaptureInfo } from '../src/index';
+import { AudioCapture, type AudioSample, type ApplicationInfo, type ActivityInfo, type CaptureInfo } from '../../src/index';
 
 // Global error handlers for test suite
 process.on('uncaughtException', (err) => {

@@ -7,6 +7,12 @@
         "rootDir": ".."
     },
     "include": [
-        "./*.ts"
+        "./*.ts",
+        "./basics/*.ts",
+        "./streams/*.ts",
+        "./processing/*.ts",
+        "./voice/*.ts",
+        "./capture-targets/*.ts",
+        "./advanced/*.ts"
     ]
 }

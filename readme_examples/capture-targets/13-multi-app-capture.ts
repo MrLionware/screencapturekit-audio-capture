@@ -10,7 +10,7 @@
  *   TARGET_APPS="Safari,Music" npx tsx 13-multi-app-capture.ts
  */
 
-import { AudioCapture, AudioCaptureError, ErrorCode, type AudioSample, type CaptureInfo, type ApplicationInfo } from '../src/index';
+import { AudioCapture, AudioCaptureError, ErrorCode, type AudioSample, type CaptureInfo, type ApplicationInfo } from '../../src/index';
 import * as readline from 'readline';
 
 // Global error handlers for test suite

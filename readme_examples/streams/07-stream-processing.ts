@@ -1,4 +1,4 @@
-import { AudioCapture, AudioStream, type AudioSample } from '../src/index';
+import { AudioCapture, AudioStream, type AudioSample } from '../../src/index';
 import { Transform, TransformCallback, pipeline } from 'stream';
 
 // Global error handlers for test suite

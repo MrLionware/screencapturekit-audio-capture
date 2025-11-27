@@ -1,4 +1,4 @@
-import { AudioCapture, AudioStream, type AudioSample } from '../src/index';
+import { AudioCapture, AudioStream, type AudioSample } from '../../src/index';
 import { pipeline } from 'stream';
 import fs from 'fs';
 import path from 'path';
