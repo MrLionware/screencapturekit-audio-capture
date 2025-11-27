@@ -12,10 +12,10 @@ npx tsx readme_examples/basics/01-quick-start.ts
 TARGET_APP="Spotify" npx tsx readme_examples/basics/01-quick-start.ts
 
 # Run all examples (interactive)
-./readme_examples/run_all.sh
+npx tsx readme_examples/run_all.ts
 
 # Run all examples with specific app
-./readme_examples/run_all.sh "Google Chrome"
+npx tsx readme_examples/run_all.ts "Google Chrome"
 ```
 
 ---
@@ -145,4 +145,4 @@ Advanced SDK features and architecture patterns.
 
 ## Test Logs
 
-Test logs are stored in `.test-logs/` when running `run_all.sh`.
+Test logs are stored in `.test-logs/` when running `run_all.ts`.
