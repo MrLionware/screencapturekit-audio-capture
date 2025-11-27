@@ -26,6 +26,7 @@ Capture real-time audio from any macOS application with a simple, event-driven A
 - [Events Reference](#events-reference)
 - [TypeScript](#typescript)
 - [Working with Audio Data](#working-with-audio-data)
+- [Resource Lifecycle](#resource-lifecycle)
 - [Common Issues](#common-issues)
 - [Examples](#examples)
 - [Platform Support](#platform-support)
@@ -114,8 +115,12 @@ screencapturekit-audio-capture/
 │   │   ├── stt-converter.ts    # Speech-to-text transform stream
 │   │   └── native-loader.ts    # Native addon loader
 │   │
-│   ├── types.ts                # TypeScript type definitions
-│   ├── errors.ts               # Error classes and codes
+│   ├── core/                   # Shared types, errors, and lifecycle
+│   │   ├── index.ts            # Barrel exports
+│   │   ├── types.ts            # TypeScript type definitions
+│   │   ├── errors.ts           # Error classes and codes
+│   │   └── cleanup.ts          # Resource cleanup utilities
+│   │
 │   └── index.ts                # Main package exports
 │
 ├── dist/                       # Compiled JavaScript output
@@ -134,7 +139,7 @@ screencapturekit-audio-capture/
 
 ## Quick Start
 
-> 📁 **See [`readme_examples/01-quick-start.ts`](readme_examples/01-quick-start.ts) for runnable code**
+> 📁 **See [`readme_examples/basics/01-quick-start.ts`](readme_examples/basics/01-quick-start.ts) for runnable code**
 
 ```typescript
 import { AudioCapture } from 'screencapturekit-audio-capture';
@@ -158,12 +163,13 @@ Common patterns for integrating audio capture into your application:
 
 | Pattern | Example File | Description |
 |---------|--------------|-------------|
-| **STT Integration** | [`02-stt-integration.ts`](readme_examples/02-stt-integration.ts) | Stream + event-based approaches for speech-to-text |
-| **Voice Agent** | [`03-voice-agent.ts`](readme_examples/03-voice-agent.ts) | Real-time processing with low-latency config |
-| **Recording** | [`04-audio-recording.ts`](readme_examples/04-audio-recording.ts) | Capture to WAV file with efficient settings |
-| **Robust Capture** | [`05-robust-capture.ts`](readme_examples/05-robust-capture.ts) | Production error handling with fallbacks |
-| **Multi-App** | [`13-multi-app-capture.ts`](readme_examples/13-multi-app-capture.ts) | Capture game + Discord, Zoom + Music, etc. |
-| **Multi-Process** | [`20-capture-service.ts`](readme_examples/20-capture-service.ts) | Share audio across multiple processes |
+| **STT Integration** | [`voice/02-stt-integration.ts`](readme_examples/voice/02-stt-integration.ts) | Stream + event-based approaches for speech-to-text |
+| **Voice Agent** | [`voice/03-voice-agent.ts`](readme_examples/voice/03-voice-agent.ts) | Real-time processing with low-latency config |
+| **Recording** | [`voice/04-audio-recording.ts`](readme_examples/voice/04-audio-recording.ts) | Capture to WAV file with efficient settings |
+| **Robust Capture** | [`basics/05-robust-capture.ts`](readme_examples/basics/05-robust-capture.ts) | Production error handling with fallbacks |
+| **Multi-App** | [`capture-targets/13-multi-app-capture.ts`](readme_examples/capture-targets/13-multi-app-capture.ts) | Capture game + Discord, Zoom + Music, etc. |
+| **Multi-Process** | [`advanced/20-capture-service.ts`](readme_examples/advanced/20-capture-service.ts) | Share audio across multiple processes |
+| **Graceful Cleanup** | [`advanced/21-graceful-cleanup.ts`](readme_examples/advanced/21-graceful-cleanup.ts) | Resource lifecycle and cleanup utilities |
 
 ### Key Configuration Patterns
 
@@ -205,6 +211,9 @@ import type { AudioSample, ApplicationInfo } from 'screencapturekit-audio-captur
 
 // Multi-process capture service (for sharing audio across processes)
 import { AudioCaptureServer, AudioCaptureClient } from 'screencapturekit-audio-capture';
+
+// Resource cleanup utilities
+import { cleanupAll, getActiveInstanceCount, installGracefulShutdown } from 'screencapturekit-audio-capture';
 ```
 
 | Export | Description |
@@ -216,6 +225,9 @@ import { AudioCaptureServer, AudioCaptureClient } from 'screencapturekit-audio-c
 | `AudioCaptureClient` | WebSocket client to receive shared audio |
 | `AudioCaptureError` | Error class with codes and details |
 | `ErrorCode` | Error code enum for type-safe handling |
+| `cleanupAll` | Dispose all AudioCapture and AudioCaptureServer instances |
+| `getActiveInstanceCount` | Get total active instance count |
+| `installGracefulShutdown` | Install process exit handlers for cleanup |
 | `ScreenCaptureKit` | Low-level native binding *(advanced)* |
 
 **Types:** `AudioSample`, `ApplicationInfo`, `WindowInfo`, `DisplayInfo`, `CaptureOptions`, `PermissionStatus`, `ActivityInfo`, `ServerOptions`, `ClientOptions`, and [more](#typescript).
@@ -242,7 +254,7 @@ For true hardware validation, run the example scripts on macOS with Screen Recor
 
 ## Stream-Based API
 
-> 📁 **See [`readme_examples/06-stream-basics.ts`](readme_examples/06-stream-basics.ts) and [`readme_examples/07-stream-processing.ts`](readme_examples/07-stream-processing.ts) for runnable examples**
+> 📁 **See [`readme_examples/streams/06-stream-basics.ts`](readme_examples/streams/06-stream-basics.ts) and [`readme_examples/streams/07-stream-processing.ts`](readme_examples/streams/07-stream-processing.ts) for runnable examples**
 
 Use Node.js Readable streams for composable audio processing:
 
@@ -302,7 +314,7 @@ process.on('SIGINT', () => audioStream.stop());
 - **Batch processing** is more efficient than per-sample processing
 - **Default highWaterMark** is suitable for most cases
 
-> 📁 **See [`readme_examples/07-stream-processing.ts`](readme_examples/07-stream-processing.ts) for a complete production-ready stream example**
+> 📁 **See [`readme_examples/streams/07-stream-processing.ts`](readme_examples/streams/07-stream-processing.ts) for a complete production-ready stream example**
 
 ## API Reference
 
@@ -342,6 +354,9 @@ High-level event-based API (recommended).
 | [21](#method-21) | | `enableActivityTracking(opts?)` | Track which apps produce audio |
 | [22](#method-22) | | `disableActivityTracking()` | Stop tracking and clear cache |
 | [23](#method-23) | | `getActivityInfo()` | Get tracking stats |
+| | **Lifecycle** | | |
+| [24](#method-24) | | `dispose()` | Release resources and stop capture |
+| [25](#method-25) | | `isDisposed()` | Check if instance is disposed |
 
 #### Static Methods
 
@@ -353,6 +368,8 @@ High-level event-based API (recommended).
 | [S4](#method-s4) | `AudioCapture.peakToDb(peak)` | Convert peak (0-1) to decibels |
 | [S5](#method-s5) | `AudioCapture.calculateDb(buf, method?)` | Calculate dB from audio buffer |
 | [S6](#method-s6) | `AudioCapture.writeWav(buf, opts)` | Create WAV file from PCM data |
+| [S7](#method-s7) | `AudioCapture.cleanupAll()` | Dispose all active instances |
+| [S8](#method-s8) | `AudioCapture.getActiveInstanceCount()` | Get number of active instances |
 
 #### Events
 
@@ -868,6 +885,43 @@ info.recentApps.forEach(app => {
 
 ---
 
+#### Lifecycle Methods
+
+<a id="method-24"></a>
+
+##### [24] `dispose(): void`
+
+Release all resources and stop any active capture. Safe to call multiple times (idempotent).
+
+```typescript
+const capture = new AudioCapture();
+capture.startCapture('Spotify');
+
+// When done, release resources
+capture.dispose();
+
+// Instance can no longer be used
+console.log(capture.isDisposed()); // true
+```
+
+---
+
+<a id="method-25"></a>
+
+##### [25] `isDisposed(): boolean`
+
+Check if this instance has been disposed.
+
+```typescript
+if (!capture.isDisposed()) {
+  capture.startCapture('Spotify');
+}
+```
+
+> **Note:** Calling methods like `startCapture()`, `captureWindow()`, or `captureDisplay()` on a disposed instance will throw an error.
+
+---
+
 ### Static Method Reference
 
 <a id="method-s1"></a>
@@ -987,6 +1041,42 @@ capture.on('audio', (sample) => {
 
 ---
 
+<a id="method-s7"></a>
+
+##### [S7] `AudioCapture.cleanupAll(): number`
+
+Dispose all active `AudioCapture` instances. Returns the number of instances cleaned up.
+
+```typescript
+// Create multiple instances
+const capture1 = new AudioCapture();
+const capture2 = new AudioCapture();
+
+console.log(AudioCapture.getActiveInstanceCount()); // 2
+
+// Clean up all at once
+const cleaned = AudioCapture.cleanupAll();
+console.log(`Cleaned up ${cleaned} instances`); // 2
+```
+
+---
+
+<a id="method-s8"></a>
+
+##### [S8] `AudioCapture.getActiveInstanceCount(): number`
+
+Get the number of active (non-disposed) `AudioCapture` instances.
+
+```typescript
+const capture = new AudioCapture();
+console.log(AudioCapture.getActiveInstanceCount()); // 1
+
+capture.dispose();
+console.log(AudioCapture.getActiveInstanceCount()); // 0
+```
+
+---
+
 ### Error Handling
 
 #### Class: `AudioCaptureError`
@@ -999,7 +1089,7 @@ Custom error class thrown by the SDK.
 
 #### Error Codes
 
-Import `ErrorCodes` for reliable error checking:
+Import `ErrorCode` for reliable error checking:
 
 ```typescript
 import { AudioCapture, AudioCaptureError, ErrorCode } from 'screencapturekit-audio-capture';
@@ -1097,7 +1187,7 @@ const isCapturing = captureKit.isCapturing();
 
 macOS ScreenCaptureKit only allows one process to capture audio at a time. If you need multiple processes to receive the same audio data, use the server/client architecture.
 
-> 📁 **See [`readme_examples/20-capture-service.ts`](readme_examples/20-capture-service.ts) for a complete example**
+> 📁 **See [`readme_examples/advanced/20-capture-service.ts`](readme_examples/advanced/20-capture-service.ts) for a complete example**
 
 #### When to Use
 
@@ -1324,6 +1414,7 @@ Full type definitions included. See [Module Exports](#module-exports) for import
 | `ServerOptions` | Options for AudioCaptureServer |
 | `ClientOptions` | Options for AudioCaptureClient |
 | `RemoteAudioSample` | Audio sample received via client |
+| `CleanupResult` | Result of cleanupAll() operation |
 | `ErrorCode` | Enum of error codes |
 
 ---
@@ -1371,6 +1462,65 @@ capture.startCapture('Spotify', { minVolume: 0.01 });
 
 ---
 
+## Resource Lifecycle
+
+> 📁 **See [`readme_examples/advanced/21-graceful-cleanup.ts`](readme_examples/advanced/21-graceful-cleanup.ts) for a complete example**
+
+Properly managing resources ensures your application shuts down cleanly without orphaned captures or memory leaks.
+
+### Instance Cleanup
+
+```typescript
+const capture = new AudioCapture();
+capture.startCapture('Spotify');
+
+// When done with this specific instance
+capture.dispose();  // Stops capture and releases resources
+```
+
+### Global Cleanup
+
+```typescript
+import { cleanupAll, getActiveInstanceCount, installGracefulShutdown } from 'screencapturekit-audio-capture';
+
+// Check active instances
+console.log(`Active: ${getActiveInstanceCount()}`);
+
+// Clean up all instances at once
+const result = await cleanupAll();  // Returns CleanupResult
+console.log(`Cleaned up ${result.total} instances`);
+
+// Install automatic cleanup on process exit (SIGINT, SIGTERM, etc.)
+installGracefulShutdown();
+```
+
+### Best Practices
+
+| Pattern | When to Use |
+|---------|-------------|
+| `capture.dispose()` | Cleaning up a specific instance |
+| `AudioCapture.cleanupAll()` | Cleaning up all `AudioCapture` instances |
+| `cleanupAll()` | Cleaning up all instances (AudioCapture + AudioCaptureServer) |
+| `installGracefulShutdown()` | Auto-cleanup on Ctrl+C, kill signals, or uncaught exceptions |
+
+### Process Exit Handling
+
+Exit handlers are automatically installed when you create an `AudioCapture` or `AudioCaptureServer` instance. For explicit control:
+
+```typescript
+import { installGracefulShutdown } from 'screencapturekit-audio-capture';
+
+// Install once at application startup
+installGracefulShutdown();
+
+// Now SIGINT/SIGTERM will automatically:
+// 1. Stop all active captures
+// 2. Dispose all instances
+// 3. Exit cleanly
+```
+
+---
+
 ## Common Issues
 
 ### No applications available
@@ -1407,44 +1557,60 @@ capture.startCapture('Spotify', { minVolume: 0.01 });
 
 > 📁 **All examples are in [`readme_examples/`](readme_examples/)**
 
-### Basic Examples
+### Basics
 
 | Example | File | Description |
 |---------|------|-------------|
-| Quick Start | [`01-quick-start.ts`](readme_examples/01-quick-start.ts) | Basic capture setup |
-| STT Integration | [`02-stt-integration.ts`](readme_examples/02-stt-integration.ts) | Speech-to-text patterns |
-| Voice Agent | [`03-voice-agent.ts`](readme_examples/03-voice-agent.ts) | Real-time voice processing |
-| Recording | [`04-audio-recording.ts`](readme_examples/04-audio-recording.ts) | Record and save as WAV |
-| Robust Capture | [`05-robust-capture.ts`](readme_examples/05-robust-capture.ts) | Production error handling |
+| Quick Start | [`basics/01-quick-start.ts`](readme_examples/basics/01-quick-start.ts) | Basic capture setup |
+| Robust Capture | [`basics/05-robust-capture.ts`](readme_examples/basics/05-robust-capture.ts) | Production error handling |
+| Find Apps | [`basics/11-find-apps.ts`](readme_examples/basics/11-find-apps.ts) | App discovery |
 
-### Stream & Processing
+### Voice & STT
 
 | Example | File | Description |
 |---------|------|-------------|
-| Stream Basics | [`06-stream-basics.ts`](readme_examples/06-stream-basics.ts) | Stream API fundamentals |
-| Stream Processing | [`07-stream-processing.ts`](readme_examples/07-stream-processing.ts) | Transform streams |
-| Visualizer | [`08-visualizer.ts`](readme_examples/08-visualizer.ts) | ASCII volume display |
-| Volume Monitor | [`09-volume-monitor.ts`](readme_examples/09-volume-monitor.ts) | Level alerts |
-| Int16 Capture | [`10-int16-capture.ts`](readme_examples/10-int16-capture.ts) | Int16 format |
-| Find Apps | [`11-find-apps.ts`](readme_examples/11-find-apps.ts) | App discovery |
-| Manual Processing | [`12-manual-processing.ts`](readme_examples/12-manual-processing.ts) | Buffer manipulation |
+| STT Integration | [`voice/02-stt-integration.ts`](readme_examples/voice/02-stt-integration.ts) | Speech-to-text patterns |
+| Voice Agent | [`voice/03-voice-agent.ts`](readme_examples/voice/03-voice-agent.ts) | Real-time voice processing |
+| Recording | [`voice/04-audio-recording.ts`](readme_examples/voice/04-audio-recording.ts) | Record and save as WAV |
 
-### Multi-Source & Advanced
+### Streams
 
 | Example | File | Description |
 |---------|------|-------------|
-| Multi-App Capture | [`13-multi-app-capture.ts`](readme_examples/13-multi-app-capture.ts) | Multiple apps |
-| Per-App Streams | [`14-per-app-streams.ts`](readme_examples/14-per-app-streams.ts) | Separate streams |
-| Window Capture | [`15-window-capture.ts`](readme_examples/15-window-capture.ts) | Single window |
-| Display Capture | [`16-display-capture.ts`](readme_examples/16-display-capture.ts) | Full display |
-| Multi-Window | [`17-multi-window-capture.ts`](readme_examples/17-multi-window-capture.ts) | Multiple windows |
-| Multi-Display | [`18-multi-display-capture.ts`](readme_examples/18-multi-display-capture.ts) | Multiple displays |
-| Advanced Methods | [`19-advanced-methods.ts`](readme_examples/19-advanced-methods.ts) | Activity tracking |
-| Capture Service | [`20-capture-service.ts`](readme_examples/20-capture-service.ts) | Multi-process sharing |
+| Stream Basics | [`streams/06-stream-basics.ts`](readme_examples/streams/06-stream-basics.ts) | Stream API fundamentals |
+| Stream Processing | [`streams/07-stream-processing.ts`](readme_examples/streams/07-stream-processing.ts) | Transform streams |
+
+### Processing
+
+| Example | File | Description |
+|---------|------|-------------|
+| Visualizer | [`processing/08-visualizer.ts`](readme_examples/processing/08-visualizer.ts) | ASCII volume display |
+| Volume Monitor | [`processing/09-volume-monitor.ts`](readme_examples/processing/09-volume-monitor.ts) | Level alerts |
+| Int16 Capture | [`processing/10-int16-capture.ts`](readme_examples/processing/10-int16-capture.ts) | Int16 format |
+| Manual Processing | [`processing/12-manual-processing.ts`](readme_examples/processing/12-manual-processing.ts) | Buffer manipulation |
+
+### Capture Targets
+
+| Example | File | Description |
+|---------|------|-------------|
+| Multi-App Capture | [`capture-targets/13-multi-app-capture.ts`](readme_examples/capture-targets/13-multi-app-capture.ts) | Multiple apps |
+| Per-App Streams | [`capture-targets/14-per-app-streams.ts`](readme_examples/capture-targets/14-per-app-streams.ts) | Separate streams |
+| Window Capture | [`capture-targets/15-window-capture.ts`](readme_examples/capture-targets/15-window-capture.ts) | Single window |
+| Display Capture | [`capture-targets/16-display-capture.ts`](readme_examples/capture-targets/16-display-capture.ts) | Full display |
+| Multi-Window | [`capture-targets/17-multi-window-capture.ts`](readme_examples/capture-targets/17-multi-window-capture.ts) | Multiple windows |
+| Multi-Display | [`capture-targets/18-multi-display-capture.ts`](readme_examples/capture-targets/18-multi-display-capture.ts) | Multiple displays |
+
+### Advanced
+
+| Example | File | Description |
+|---------|------|-------------|
+| Advanced Methods | [`advanced/19-advanced-methods.ts`](readme_examples/advanced/19-advanced-methods.ts) | Activity tracking |
+| Capture Service | [`advanced/20-capture-service.ts`](readme_examples/advanced/20-capture-service.ts) | Multi-process sharing |
+| Graceful Cleanup | [`advanced/21-graceful-cleanup.ts`](readme_examples/advanced/21-graceful-cleanup.ts) | Resource lifecycle management |
 
 **Run examples:**
 ```bash
-npx tsx readme_examples/01-quick-start.ts
+npx tsx readme_examples/basics/01-quick-start.ts
 npm run test:readme  # Run all examples
 ```
 
@@ -1454,13 +1620,13 @@ Most examples support environment variables to target specific sources instead o
 
 | Env Variable | Type | Used By | Example |
 |-------------|------|---------|---------|
-| `TARGET_APP` | App name | 01-12, 19, 20 | `TARGET_APP="Spotify" npx tsx readme_examples/01-quick-start.ts` |
-| `TARGET_APPS` | Comma-separated | 13, 14 | `TARGET_APPS="Safari,Music" npx tsx readme_examples/13-multi-app-capture.ts` |
-| `TARGET_WINDOW` | Window ID | 15, 17 | `TARGET_WINDOW=12345 npx tsx readme_examples/15-window-capture.ts` |
-| `TARGET_DISPLAY` | Display ID | 16, 18 | `TARGET_DISPLAY=1 npx tsx readme_examples/16-display-capture.ts` |
-| `VERIFY` | `1` or `true` | 13 | `VERIFY=1 npx tsx readme_examples/13-multi-app-capture.ts` |
+| `TARGET_APP` | App name | 01-12, 19-21 | `TARGET_APP="Spotify" npx tsx readme_examples/basics/01-quick-start.ts` |
+| `TARGET_APPS` | Comma-separated | 13, 14 | `TARGET_APPS="Safari,Music" npx tsx readme_examples/capture-targets/13-multi-app-capture.ts` |
+| `TARGET_WINDOW` | Window ID | 15, 17 | `TARGET_WINDOW=12345 npx tsx readme_examples/capture-targets/15-window-capture.ts` |
+| `TARGET_DISPLAY` | Display ID | 16, 18 | `TARGET_DISPLAY=1 npx tsx readme_examples/capture-targets/16-display-capture.ts` |
+| `VERIFY` | `1` or `true` | 13 | `VERIFY=1 npx tsx readme_examples/capture-targets/13-multi-app-capture.ts` |
 
-> **Tip:** Run `npx tsx readme_examples/11-find-apps.ts` to list available apps and their names. Window/display IDs are printed when running the respective capture examples.
+> **Tip:** Run `npx tsx readme_examples/basics/11-find-apps.ts` to list available apps and their names. Window/display IDs are printed when running the respective capture examples.
 >
 > **Important:** Environment variables must be placed **before** the command, not after. `TARGET_APP="Spotify" npx tsx ...` works, but `npx tsx ... TARGET_APP="Spotify"` does not.
 
