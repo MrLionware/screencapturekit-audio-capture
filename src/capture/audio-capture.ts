@@ -6,7 +6,7 @@
 import { EventEmitter } from 'events';
 import { AudioStream } from './audio-stream';
 import { STTConverter } from '../utils/stt-converter';
-import { AudioCaptureError, ErrorCode } from '../errors';
+import { AudioCaptureError, ErrorCode } from '../core/errors';
 import type {
   ApplicationInfo,
   WindowInfo,
@@ -39,7 +39,7 @@ import type {
   MultiDisplayCaptureOptions,
   MultiDisplayIdentifier,
   CaptureTargetType,
-} from '../types';
+} from '../core/types';
 
 /**
  * Native ScreenCaptureKit binding interface
@@ -110,6 +110,66 @@ interface InternalTarget {
   targetType: CaptureTargetType;
 }
 
+// ==================== Global Instance Tracking ====================
+
+/** Set of all active AudioCapture instances for cleanup */
+const activeInstances = new Set<AudioCapture>();
+
+/** Symbol to mark that exit handlers have been installed (survives module reloads) */
+const EXIT_HANDLERS_KEY = Symbol.for('screencapturekit.audio-capture.exitHandlers');
+
+/** Whether cleanup is in progress (prevents recursive cleanup) */
+let cleanupInProgress = false;
+
+/**
+ * Install process exit handlers for graceful cleanup
+ * Called automatically on first AudioCapture instantiation
+ * Uses a process-level symbol to prevent duplicate handlers across module reloads
+ */
+function installExitHandlers(): void {
+  // Check process-level flag to prevent duplicate handlers across module reloads
+  if ((process as any)[EXIT_HANDLERS_KEY]) return;
+  (process as any)[EXIT_HANDLERS_KEY] = true;
+
+  const cleanup = (signal?: string): void => {
+    if (cleanupInProgress) return;
+    cleanupInProgress = true;
+
+    // Stop all active captures
+    for (const instance of activeInstances) {
+      try {
+        if (instance.isCapturing()) {
+          instance.stopCapture();
+        }
+      } catch {
+        // Ignore errors during cleanup
+      }
+    }
+    activeInstances.clear();
+
+    // Reset flag so new instances can be tracked
+    cleanupInProgress = false;
+
+    // For SIGINT/SIGTERM, allow process to exit naturally after cleanup
+    if (signal === 'SIGINT' || signal === 'SIGTERM') {
+      process.exit(0);
+    }
+  };
+
+  // Handle Ctrl+C and kill signals
+  process.on('SIGINT', () => cleanup('SIGINT'));
+  process.on('SIGTERM', () => cleanup('SIGTERM'));
+
+  // Handle normal process exit
+  process.on('beforeExit', () => cleanup());
+
+  // Handle uncaught exceptions - cleanup but don't swallow the error
+  process.on('uncaughtException', (error) => {
+    cleanup();
+    throw error;
+  });
+}
+
 /**
  * Main AudioCapture class
  * High-level API for capturing audio from macOS applications
@@ -130,6 +190,9 @@ export class AudioCapture extends EventEmitter {
   private _activityTrackingEnabled: boolean = false;
   private _activityDecayMs: number = 30000; // Remove apps from cache after 30s of inactivity
 
+  /** Whether this instance has been disposed */
+  private _disposed: boolean = false;
+
   /**
    * Create a new AudioCapture instance
    */
@@ -138,6 +201,90 @@ export class AudioCapture extends EventEmitter {
     // Import the native binding
     const { ScreenCaptureKit: NativeScreenCaptureKit } = require('../utils/native-loader');
     this.captureKit = new NativeScreenCaptureKit();
+
+    // Track this instance for cleanup
+    activeInstances.add(this);
+
+    // Install exit handlers on first instantiation
+    installExitHandlers();
+  }
+
+  // ==================== Lifecycle Methods ====================
+
+  /**
+   * Dispose of this AudioCapture instance and release all resources.
+   * Stops any active capture, removes event listeners, and marks the instance as disposed.
+   * This method is idempotent - calling it multiple times is safe.
+   */
+  dispose(): void {
+    if (this._disposed) return;
+    this._disposed = true;
+
+    // Stop any active capture
+    if (this.capturing) {
+      try {
+        this.stopCapture();
+      } catch {
+        // Ignore errors during dispose
+      }
+    }
+
+    // Clear activity tracking
+    this._audioActivityCache.clear();
+
+    // Remove from global tracking
+    activeInstances.delete(this);
+
+    // Remove all event listeners
+    this.removeAllListeners();
+  }
+
+  /**
+   * Check if this instance has been disposed
+   * @returns true if dispose() has been called
+   */
+  isDisposed(): boolean {
+    return this._disposed;
+  }
+
+  /**
+   * Throw if this instance has been disposed
+   * @internal
+   */
+  private _assertNotDisposed(): void {
+    if (this._disposed) {
+      throw new AudioCaptureError(
+        'This AudioCapture instance has been disposed and cannot be used',
+        ErrorCode.CAPTURE_FAILED,
+        { disposed: true }
+      );
+    }
+  }
+
+  /**
+   * Clean up all active AudioCapture instances.
+   * Useful for cleanup in tests or when shutting down an application.
+   * @returns Number of instances that were cleaned up
+   */
+  static cleanupAll(): number {
+    const count = activeInstances.size;
+    for (const instance of activeInstances) {
+      try {
+        instance.dispose();
+      } catch {
+        // Ignore errors during cleanup
+      }
+    }
+    activeInstances.clear();
+    return count;
+  }
+
+  /**
+   * Get the count of active AudioCapture instances
+   * @returns Number of active instances
+   */
+  static getActiveInstanceCount(): number {
+    return activeInstances.size;
   }
 
   // ==================== Application Discovery ====================
@@ -576,6 +723,7 @@ export class AudioCapture extends EventEmitter {
    * @fires AudioCapture#error
    */
   startCapture(appIdentifier: AppIdentifier, options: CaptureOptions = {}): boolean {
+    this._assertNotDisposed();
     let processId: number;
     let appInfo: ApplicationInfo;
 
@@ -643,6 +791,7 @@ export class AudioCapture extends EventEmitter {
    * @returns true if capture started successfully
    */
   captureWindow(windowId: number, options: CaptureOptions = {}): boolean {
+    this._assertNotDisposed();
     this._assertNativeMethod('startCaptureForWindow', 'Window capture');
     if (typeof windowId !== 'number') {
       throw AudioCaptureError.invalidArgument('windowId must be a number.', {
@@ -687,6 +836,7 @@ export class AudioCapture extends EventEmitter {
    * @returns true if capture started successfully
    */
   captureDisplay(displayId: number, options: CaptureOptions = {}): boolean {
+    this._assertNotDisposed();
     this._assertNativeMethod('startCaptureForDisplay', 'Display capture');
     if (typeof displayId !== 'number') {
       throw AudioCaptureError.invalidArgument('displayId must be a number.', {
@@ -732,6 +882,7 @@ export class AudioCapture extends EventEmitter {
    * @fires AudioCapture#error
    */
   captureMultipleApps(appIdentifiers: MultiAppIdentifier, options: MultiAppCaptureOptions = {}): boolean {
+    this._assertNotDisposed();
     this._assertNativeMethod('startCaptureMultiApp', 'Multi-app capture');
 
     const { allowPartial = true, ...captureOptions } = options;
@@ -851,6 +1002,7 @@ export class AudioCapture extends EventEmitter {
    * @fires AudioCapture#error
    */
   captureMultipleWindows(windowIdentifiers: MultiWindowIdentifier, options: MultiWindowCaptureOptions = {}): boolean {
+    this._assertNotDisposed();
     this._assertNativeMethod('startCaptureMultiWindow', 'Multi-window capture');
 
     const { allowPartial = true, ...captureOptions } = options;
@@ -933,6 +1085,7 @@ export class AudioCapture extends EventEmitter {
    * @fires AudioCapture#error
    */
   captureMultipleDisplays(displayIdentifiers: MultiDisplayIdentifier, options: MultiDisplayCaptureOptions = {}): boolean {
+    this._assertNotDisposed();
     this._assertNativeMethod('startCaptureMultiDisplay', 'Multi-display capture');
 
     const { allowPartial = true, ...captureOptions } = options;

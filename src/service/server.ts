@@ -23,7 +23,7 @@
 import { EventEmitter } from 'events';
 import { WebSocketServer, WebSocket } from 'ws';
 import { AudioCapture } from '../capture/audio-capture';
-import type { AudioSample, CaptureOptions } from '../types';
+import type { AudioSample, CaptureOptions } from '../core/types';
 
 export interface ServerOptions {
   /** Port to listen on (default: 9123) */
@@ -66,6 +66,44 @@ interface ServerMessage {
   payload: unknown;
 }
 
+/** Set of all active server instances for cleanup */
+const activeServers = new Set<AudioCaptureServer>();
+
+/** Symbol to mark that server exit handlers have been installed (survives module reloads) */
+const SERVER_EXIT_HANDLERS_KEY = Symbol.for('screencapturekit.server.exitHandlers');
+
+/**
+ * Install process exit handlers for graceful server cleanup
+ * Uses a process-level symbol to prevent duplicate handlers across module reloads
+ */
+function installServerExitHandlers(): void {
+  // Check process-level flag to prevent duplicate handlers across module reloads
+  if ((process as any)[SERVER_EXIT_HANDLERS_KEY]) return;
+  (process as any)[SERVER_EXIT_HANDLERS_KEY] = true;
+
+  const cleanup = async (signal?: string): Promise<void> => {
+    // Stop all active servers
+    const stopPromises: Promise<void>[] = [];
+    for (const server of activeServers) {
+      stopPromises.push(
+        server.stop().catch(() => {
+          // Ignore errors during cleanup
+        })
+      );
+    }
+    await Promise.all(stopPromises);
+    activeServers.clear();
+
+    if (signal === 'SIGINT' || signal === 'SIGTERM') {
+      process.exit(0);
+    }
+  };
+
+  // Handle Ctrl+C and kill signals
+  process.on('SIGINT', () => cleanup('SIGINT'));
+  process.on('SIGTERM', () => cleanup('SIGTERM'));
+}
+
 export class AudioCaptureServer extends EventEmitter {
   private wss: WebSocketServer | null = null;
   private capture: AudioCapture;
@@ -73,6 +111,7 @@ export class AudioCaptureServer extends EventEmitter {
   private currentSession: CaptureSession | null = null;
   private options: Required<ServerOptions>;
   private clientIdCounter = 0;
+  private _disposed = false;
 
   constructor(options: ServerOptions = {}) {
     super();
@@ -82,6 +121,10 @@ export class AudioCaptureServer extends EventEmitter {
     };
     this.capture = new AudioCapture();
     this.setupCaptureEvents();
+
+    // Track this instance for cleanup
+    activeServers.add(this);
+    installServerExitHandlers();
   }
 
   private setupCaptureEvents(): void {
@@ -156,6 +199,54 @@ export class AudioCaptureServer extends EventEmitter {
         resolve();
       }
     });
+  }
+
+  /**
+   * Dispose of this server instance and release all resources.
+   * Stops the server, disposes the underlying AudioCapture, and cleans up.
+   * This method is idempotent - calling it multiple times is safe.
+   */
+  async dispose(): Promise<void> {
+    if (this._disposed) return;
+    this._disposed = true;
+
+    await this.stop();
+    this.capture.dispose();
+    activeServers.delete(this);
+    this.removeAllListeners();
+  }
+
+  /**
+   * Check if this server has been disposed
+   */
+  isDisposed(): boolean {
+    return this._disposed;
+  }
+
+  /**
+   * Clean up all active server instances
+   * @returns Number of servers that were cleaned up
+   */
+  static async cleanupAll(): Promise<number> {
+    const count = activeServers.size;
+    const disposePromises: Promise<void>[] = [];
+    for (const server of activeServers) {
+      disposePromises.push(
+        server.dispose().catch(() => {
+          // Ignore errors during cleanup
+        })
+      );
+    }
+    await Promise.all(disposePromises);
+    activeServers.clear();
+    return count;
+  }
+
+  /**
+   * Get the count of active server instances
+   */
+  static getActiveInstanceCount(): number {
+    return activeServers.size;
   }
 
   private handleConnection(ws: WebSocket): void {
