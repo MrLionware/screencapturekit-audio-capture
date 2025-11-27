@@ -16,7 +16,7 @@
     "test:integration": "tsx --test 'tests/integration/*.test.ts'",
     "test:edge-cases": "tsx --test 'tests/edge-cases/*.test.ts'",
     "test:watch": "tsx --test --watch 'tests/**/*.test.ts'",
-    "test:readme": "bash readme_examples/run_all.sh",
+    "test:readme": "node --experimental-strip-types --no-warnings readme_examples/run_all.ts",
     "prebuild": "prebuildify --napi --strip",
     "prebuild:all": "prebuildify --napi --strip --arch x64 && prebuildify --napi --strip --arch arm64",
     "prepublishOnly": "npm run build",
@@ -73,6 +73,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.19.25",
+    "execa": "^9.6.0",
     "@types/ws": "^8.18.1",
     "node-gyp": "^10.0.0",
     "prebuildify": "^6.0.0",
@@ -94,5 +95,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "overrides": {
+    "unicorn-magic": "^0.4.0"
   }
 }
