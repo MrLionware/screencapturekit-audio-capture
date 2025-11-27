@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.6] - 2025-11-27
+
+### Added
+- **Resource Lifecycle Management:** New `dispose()` and `isDisposed()` methods on `AudioCapture` and `AudioCaptureServer` for explicit resource cleanup
+- **Global Cleanup Utilities:** New `cleanupAll()`, `getActiveInstanceCount()`, and `installGracefulShutdown()` functions for unified resource management
+- **Automatic Exit Handlers:** Process exit handlers (SIGINT, SIGTERM) are now automatically installed for graceful cleanup
+- **New Example:** Added `21-graceful-cleanup.ts` demonstrating resource lifecycle management
+- **Cleanup Test:** Added `tests/unit/cleanup.test.ts` for cleanup utility coverage
+
+### Changed
+- **Core Module Restructure:** Moved `types.ts` and `errors.ts` into new `src/core/` directory alongside new `cleanup.ts`
+- **Examples Reorganization:** Reorganized `readme_examples/` into categorized subdirectories:
+  - `basics/` - Quick start, robust capture, app discovery
+  - `voice/` - STT integration, voice agent, audio recording
+  - `streams/` - Stream basics and processing
+  - `processing/` - Visualizer, volume monitor, format conversion
+  - `capture-targets/` - Multi-app, window, display capture examples
+  - `advanced/` - Activity tracking, capture service, graceful cleanup
+
+### Fixed
+- **README Documentation:** Fixed `cleanupAll()` example to use async/await with `CleanupResult`
+- **README Documentation:** Fixed "ErrorCodes" typo to "ErrorCode" (the enum)
+- **Type Exports:** Added missing `MultiAppCaptureOptions`, `MultiWindowCaptureOptions`, `MultiDisplayCaptureOptions` exports
+
 ## [1.3.5] - 2025-11-26
 
 ### Added
