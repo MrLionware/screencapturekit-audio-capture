@@ -5,10 +5,10 @@
  * Tests all readme examples against the screencapturekit-audio-capture package
  * to catch regressions when changes are made to the SDK or native wrapper.
  *
- * Usage: node --experimental-strip-types run_all.ts [APP_NAME] [SECOND_APP_NAME]
+ * Usage:   node --experimental-strip-types run_all.ts [APP_NAME] [SECOND_APP_NAME]
  * Example: node --experimental-strip-types run_all.ts "Google Chrome"
  *          node --experimental-strip-types run_all.ts Spotify Safari
- *          node --experimental-strip-types run_all.ts           # Interactive selection
+ *          node --experimental-strip-types run_all.ts # Interactive selection
  * ============================================================================
  */
 

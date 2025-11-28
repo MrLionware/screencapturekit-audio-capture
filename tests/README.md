@@ -15,57 +15,13 @@ npm run test:edge-cases
 npm run test:readme
 
 # Type-check tests without running
-npm run test:typecheck
+npm run typecheck:tests
 
 # Run single file
 npm test tests/unit/audio-processing.test.ts
 ```
 
 > **Note:** Tests are written in TypeScript and run via `tsx` (TypeScript executor).
-
-## Why This Framework?
-
-### Before: Monolithic Test Suite
-
-**The Problem:**
-```
-tests/
-  all.test.js (3050 lines) ← Everything in one file
-  helpers/
-    test-utils.ts
-```
-
-**Issues:**
-- ❌ Hard to find specific tests (scroll through 3000+ lines)
-- ❌ Merge conflicts when multiple developers edit the same file
-- ❌ Slow to load and parse
-- ❌ Intimidating to modify - fear of breaking something
-- ❌ No clear organization as features grow
-- ❌ Difficult to run subset of tests
-- ❌ Test duplication and copy-paste code
-
-### After: Modular TypeScript Framework
-
-**The Solution:**
-```
-tests/
-  unit/          (7 files, TypeScript)
-  integration/   (4 files, TypeScript)
-  edge-cases/    (1 file, TypeScript)
-  fixtures/      (shared mock data, TypeScript)
-  helpers/       (utilities, TypeScript)
-```
-
-**Benefits:**
-- ✅ Each file < 300 lines, focused on ONE feature
-- ✅ Easy to find tests - clear file names and organization
-- ✅ No merge conflicts - different features in different files
-- ✅ Fast to load individual test files
-- ✅ Confidence to modify - limited blast radius
-- ✅ Clear organization that scales infinitely
-- ✅ Run specific test categories easily
-- ✅ Reusable fixtures and helpers eliminate duplication
-- ✅ Production-ready architecture following industry best practices
 
 ## Directory Structure
 
@@ -84,7 +40,6 @@ tests/
 ├── integration/                   # Integration tests (multi-component)
 │   ├── activity-tracking.test.ts      # Activity tracking
 │   ├── capability-guards.test.ts      # Capability checks
-│   ├── examples.test.ts               # Example validation
 │   └── window-display.test.ts         # Window/display capture
 │
 ├── edge-cases/                    # Boundary & error cases
@@ -101,7 +56,7 @@ tests/
 │   └── assertions.ts                  # Custom assertions
 │
 ├── tsconfig.json                  # TypeScript config for tests
-└── .test-template.js              # Template for new tests
+└── .test-template.ts              # TypeScript template for new tests
 ```
 
 ## Test Organization Principles
@@ -489,7 +444,7 @@ await t.test('error handling', () => {
 
 Point new team members to:
 1. **tests/README.md** (this file) - Complete testing guide
-2. **tests/.test-template.js** - Template for new tests
+2. **tests/.test-template.ts** - TypeScript template for new tests
 3. **tests/fixtures/mock-data.ts** - Available test data
 4. **tests/helpers/** - Available utilities (TypeScript)
 
